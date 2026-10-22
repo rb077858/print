@@ -1,11 +1,9 @@
-// הדביקו כאן את ההגדרות מקונסולת Firebase:
-// Project settings -> General -> Your apps -> Web app -> SDK setup and configuration -> Config
-// (המפתחות האלה ציבוריים מטבעם, האבטחה נעשית ב-firestore.rules)
+// הגדרות פרויקט Firebase (ציבוריות מטבען, האבטחה נעשית ב-firestore.rules)
 export const firebaseConfig = {
-  apiKey: 'PASTE_API_KEY',
-  authDomain: 'PASTE_PROJECT_ID.firebaseapp.com',
-  projectId: 'PASTE_PROJECT_ID',
-  storageBucket: 'PASTE_PROJECT_ID.appspot.com',
-  messagingSenderId: 'PASTE_SENDER_ID',
-  appId: 'PASTE_APP_ID',
+  apiKey: 'AIzaSyBpId8B2vmrPMSSRfeMVOSQwc9pP0GCraM',
+  authDomain: 'reembir-print-7482.firebaseapp.com',
+  projectId: 'reembir-print-7482',
+  storageBucket: 'reembir-print-7482.firebasestorage.app',
+  messagingSenderId: '16610552035',
+  appId: '1:16610552035:web:a5a274e9ffb5988aebfdd6',
 };

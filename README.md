@@ -23,7 +23,7 @@
 ### 1. Firebase
 1. נכנסים ל-https://console.firebase.google.com ויוצרים פרויקט חדש (אפשר לכבות את Google Analytics).
 2. **Build → Authentication → Get started**. בלשונית Sign-in method מפעילים את **Anonymous** ואת **Google**.
-3. באותו מסך, בלשונית **Settings → Authorized domains**, מוסיפים את `rb077858.github.io`.
+3. באותו מסך, בלשונית **Settings → Authorized domains**, מוסיפים את `reembir.com` (וגם `rb077858.github.io`).
 4. **Build → Firestore Database → Create database**: בוחרים מיקום (למשל `eur3`) ו-production mode.
 5. בלשונית **Rules** של Firestore מוחקים את מה שיש, מדביקים את כל התוכן של `firestore.rules` ולוחצים **Publish**.
 6. **Project settings** (גלגל השיניים) → **Your apps** → מוסיפים אפליקציית Web (`</>`), מעתיקים את אובייקט `firebaseConfig` ומדביקים את הערכים בקובץ `assets/firebase-config.js`.
@@ -31,7 +31,7 @@
 ### 2. GitHub Pages
 1. ממזגים את הקוד לענף `main`.
 2. ב-GitHub: **Settings → Pages → Build and deployment**: Source = *Deploy from a branch*, Branch = `main`, תיקייה `/ (root)`.
-3. אחרי דקה-שתיים האתר זמין בכתובת `https://rb077858.github.io/print/` (ובהתאמה `/print/send/` ו-`/print/admin/`).
+3. אחרי דקה-שתיים האתר זמין בכתובת `https://reembir.com/print/` (ובהתאמה `/print/send/` ו-`/print/admin/`).
 
 > GitHub Pages חינמי רק למאגר **ציבורי**. זה בטוח: המפתחות ב-`firebase-config.js` ציבוריים מטבעם, והאבטחה נעשית בכללים. אם רוצים מאגר פרטי, אפשר לפרסם בחינם גם ב-Cloudflare Pages או ב-Netlify. מחברים אליהם את המאגר בלי שלב build, ומוסיפים את הדומיין שלהם ל-Authorized domains.
 
