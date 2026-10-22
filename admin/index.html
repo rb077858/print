@@ -354,8 +354,8 @@
           toast(el.checked ? 'הקוד חד-פעמי' : 'הקוד רב-פעמי');
           break;
         case 'ttl':
-          // שינוי תוקף מתחיל את הספירה מעכשיו
-          await writeCode(fid, c.id, codeData(c, { ttlMinutes: Number(el.value), createdAt: serverTimestamp() }), c.id);
+          // התוקף נספר מרגע יצירת הקוד (ההעלאה), לא מרגע השינוי
+          await writeCode(fid, c.id, codeData(c, { ttlMinutes: Number(el.value) }), c.id);
           toast('התוקף עודכן');
           break;
         case 'delFile':
