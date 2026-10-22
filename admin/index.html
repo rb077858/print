@@ -39,7 +39,7 @@
       <h2>קבצים</h2>
       <div class="table-scroll">
         <table>
-          <thead><tr><th>שם</th><th>גודל</th><th>מקור</th><th>הועלה</th><th>קודים</th><th></th></tr></thead>
+          <thead><tr><th>שם</th><th>גודל</th><th>מקור</th><th>הועלה</th><th>קודים</th><th>בתור</th><th></th></tr></thead>
           <tbody id="filesBody"></tbody>
         </table>
       </div>
@@ -53,13 +53,15 @@
         </label>
       </div>
       <div class="row">
-        <span>קבצים (סדר הבחירה = סדר ההדפסה):</span>
+        <label><input type="checkbox" id="cfQueue"> קוד תור: מדפיס את כל הקבצים שבתור כרגע (שהקוד שלהם עוד לא נוצל), בלי לנצל את הקודים שלהם</label>
+      </div>
+      <div id="cfPickWrap">
+      <div class="row">
+        <span>קבצים (סדר הבחירה = סדר ההדפסה; יותר מקובץ אחד = כפתור "הדפסת X קבצים"):</span>
         <button class="ghost small" id="cfAll">בחר הכל</button>
         <button class="ghost small" id="cfNone">נקה</button>
       </div>
       <div class="file-pick" id="cfFiles"></div>
-      <div class="row">
-        <label><input type="checkbox" id="cfQueue"> קוד תור (מציג כפתור "הדפסת כל התור")</label>
       </div>
       <div class="row">
         <label><input type="checkbox" id="cfSingle" checked> חד-פעמי</label>
@@ -102,7 +104,7 @@
   </div>
 
   <script type="module">
-    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeProblem, isPrintable } from '../assets/common.js?v=2';
+    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeProblem, codeKind, isPrintable } from '../assets/common.js?v=3';
     import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import {
       collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, arrayRemove,
@@ -113,6 +115,7 @@
     const CODE_RE = /^[A-Za-z0-9_-]{3,30}$/;
 
     let files = [];   // [{id, ...data}]
+    let queue = new Set(); // fileIds שנמצאים כרגע בתור
     let codes = [];   // [{id, ...data}]
     let picked = [];  // fileIds לפי סדר הבחירה
     let editing = null; // id של קוד בעריכה
@@ -146,15 +149,54 @@
 
     // ---------- טעינה ותצוגה ----------
     async function reload() {
+      const fetchedAt = Date.now();
       const [fs, cs] = await Promise.all([getDocs(collection(db, 'files')), getDocs(collection(db, 'codes'))]);
       files = fs.docs.map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
       codes = cs.docs.map((d) => ({ id: d.id, ...d.data() }))
         .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
       picked = picked.filter((id) => files.some((f) => f.id === id));
+      await syncQueue(fetchedAt);
       renderFiles();
       renderPicker();
       renderCodes();
+    }
+
+    // התור נגזר מהקודים: כל קובץ שיש לו קוד חד-פעמי (לא קוד תור) שעדיין לא נוצל ולא פג.
+    // דף /send ומימוש קודים מעדכנים את התור בעצמם; כאן מתקנים אותו אחרי שינויים של המנהל.
+    async function syncQueue(fetchedAt) {
+      const want = new Map(); // fileId -> { createdAt, ttlMinutes } של הקוד שמחזיק הכי הרבה זמן
+      const endOf = (q) => (q.ttlMinutes ? (q.createdAt?.toMillis?.() ?? 0) + q.ttlMinutes * 60000 : Infinity);
+      for (const c of codes) {
+        if (codeKind(c) === 'queue' || !c.singleUse || codeProblem(c)) continue;
+        for (const id of c.fileIds) {
+          if (!files.some((f) => f.id === id)) continue;
+          const cur = want.get(id);
+          const entry = { createdAt: c.createdAt, ttlMinutes: c.ttlMinutes || 0 };
+          if (!cur || endOf(entry) > endOf(cur)) want.set(id, entry);
+        }
+      }
+      const qs = await getDocs(collection(db, 'queue'));
+      const have = new Map(qs.docs.map((d) => [d.id, d.data()]));
+      const batch = writeBatch(db);
+      let ops = 0;
+      for (const [id, e] of want) {
+        const h = have.get(id);
+        if (!h || h.done || h.ttlMinutes !== e.ttlMinutes || h.createdAt?.toMillis?.() !== e.createdAt?.toMillis?.()) {
+          batch.set(doc(db, 'queue', id), { ...e, done: false });
+          ops++;
+        }
+      }
+      for (const [id, h] of have) {
+        // לא מוחקים רשומה שנוצרה אחרי שטענו את הקודים (העלאה חדשה מ-/send)
+        if (!want.has(id) && (h.createdAt?.toMillis?.() ?? 0) < fetchedAt) {
+          batch.delete(doc(db, 'queue', id));
+          ops++;
+        }
+      }
+      if (ops) await batch.commit();
+      queue = new Set(want.keys());
+      for (const [id, h] of have) if (!want.has(id) && (h.createdAt?.toMillis?.() ?? 0) >= fetchedAt && !h.done) queue.add(id);
     }
 
     const fileName = (id) => files.find((f) => f.id === id)?.name ?? '(נמחק)';
@@ -168,11 +210,12 @@
           <td>${f.source === 'send' ? '<span class="badge">/send</span>' : '<span class="badge ok">מנהל</span>'}</td>
           <td>${fmtDate(f.createdAt)}</td>
           <td>${n}</td>
+          <td>${queue.has(f.id) ? '✓' : ''}</td>
           <td style="white-space:nowrap">
             <button class="small ghost" data-act="codeFor" data-id="${f.id}">צור קוד</button>
             <button class="small danger" data-act="delFile" data-id="${f.id}">מחק</button>
           </td></tr>`;
-      }).join('') : '<tr><td colspan="6" class="muted">אין קבצים</td></tr>';
+      }).join('') : '<tr><td colspan="7" class="muted">אין קבצים</td></tr>';
     }
 
     function renderPicker() {
@@ -192,11 +235,15 @@
     function renderCodes() {
       $('codesBody').innerHTML = codes.length ? codes.map((c) => {
         const problem = codeProblem(c);
-        const isQueue = c.mode === 'queue' || (c.fileIds?.length ?? 0) > 1;
+        const kind = codeKind(c);
+        const filesCell = kind === 'queue'
+          ? `<span class="muted">כל מה שבתור (${queue.size})</span>`
+          : (c.fileIds ?? []).map((id, i) => `${(c.fileIds.length > 1 ? (i + 1) + '. ' : '')}${esc(fileName(id))}`).join('<br>');
+        const kindCell = { queue: '<span class="badge">תור</span>', group: `<span class="badge ok">${c.fileIds.length} קבצים</span>`, single: 'קובץ' }[kind];
         return `<tr>
           <td class="ltr">${esc(c.id)}</td>
-          <td>${(c.fileIds ?? []).map((id, i) => `${(c.fileIds.length > 1 ? (i + 1) + '. ' : '')}${esc(fileName(id))}`).join('<br>')}</td>
-          <td>${isQueue ? '<span class="badge">תור</span>' : 'קובץ'}</td>
+          <td>${filesCell}</td>
+          <td>${kindCell}</td>
           <td>${c.singleUse ? 'חד-פעמי' : 'רב-פעמי'}</td>
           <td>${ttlText(c)}</td>
           <td>${problem ? `<span class="badge err">${esc(problem)}</span>` : '<span class="badge ok">פעיל</span>'}</td>
@@ -242,15 +289,15 @@
       const id = e.target.dataset.id;
       if (!id) return;
       picked = e.target.checked ? [...picked, id] : picked.filter((x) => x !== id);
-      if (picked.length > 1) $('cfQueue').checked = true;
       renderPicker();
     });
     $('cfAll').addEventListener('click', () => {
       files.forEach((f) => { if (!picked.includes(f.id)) picked.push(f.id); });
-      if (picked.length > 1) $('cfQueue').checked = true;
       renderPicker();
     });
     $('cfNone').addEventListener('click', () => { picked = []; renderPicker(); });
+    const syncQueueBox = () => $('cfPickWrap').classList.toggle('hidden', $('cfQueue').checked);
+    $('cfQueue').addEventListener('change', syncQueueBox);
     $('cfTtl').addEventListener('change', () => $('cfHours').classList.toggle('hidden', $('cfTtl').value !== 'custom'));
 
     function ttlFromForm() {
@@ -278,6 +325,7 @@
       $('cfSave').textContent = 'צור קוד';
       $('cfCancel').classList.add('hidden');
       $('cfResetRow').classList.add('hidden');
+      syncQueueBox();
       renderPicker();
     }
     $('cfCancel').addEventListener('click', () => { resetForm(); setMsg($('cfMsg'), ''); });
@@ -296,6 +344,7 @@
       $('cfSave').textContent = 'שמור שינויים';
       $('cfCancel').classList.remove('hidden');
       $('cfResetRow').classList.remove('hidden');
+      syncQueueBox();
       renderPicker();
       setMsg($('cfMsg'), '');
       $('codeCard').scrollIntoView({ behavior: 'smooth' });
@@ -307,7 +356,8 @@
 
     $('cfSave').addEventListener('click', async () => {
       const msg = $('cfMsg');
-      if (!picked.length) { setMsg(msg, 'בחרו לפחות קובץ אחד', 'err'); return; }
+      const isQueue = $('cfQueue').checked;
+      if (!isQueue && !picked.length) { setMsg(msg, 'בחרו לפחות קובץ אחד', 'err'); return; }
       let id = $('cfCode').value.trim();
       if (id && !CODE_RE.test(id)) { setMsg(msg, 'קוד יכול להכיל אותיות באנגלית, ספרות, - ו-_ (3 עד 30 תווים)', 'err'); return; }
 
@@ -317,8 +367,8 @@
           do { id = randomCode(); } while (await codeExists(id));
         }
         const data = {
-          fileIds: picked,
-          mode: $('cfQueue').checked || picked.length > 1 ? 'queue' : 'single',
+          fileIds: isQueue ? [] : picked,
+          mode: isQueue ? 'queue' : picked.length > 1 ? 'group' : 'single',
           singleUse: $('cfSingle').checked,
           ttlMinutes: ttlFromForm(),
         };
@@ -360,6 +410,7 @@
       const batch = writeBatch(db);
       for (let i = 0; i < (f?.chunks ?? 0); i++) batch.delete(doc(db, 'files', id, 'chunks', String(i)));
       batch.delete(doc(db, 'files', id));
+      batch.delete(doc(db, 'queue', id));
       for (const c of codes.filter((c) => c.fileIds?.includes(id))) {
         if (c.fileIds.length === 1) batch.delete(doc(db, 'codes', c.id));
         else batch.update(doc(db, 'codes', c.id), { fileIds: arrayRemove(id) });

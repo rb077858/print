@@ -1,9 +1,9 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
-  getFirestore, doc, collection, getDoc, setDoc, writeBatch, serverTimestamp, Bytes,
+  getFirestore, doc, collection, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, Bytes,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js?v=2';
+import { firebaseConfig } from './firebase-config.js?v=3';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -75,7 +75,7 @@ export async function downloadFile(fileId) {
 // מחזיר null אם הקוד תקף, אחרת הודעת שגיאה
 export function codeProblem(c) {
   if (!c) return 'הקוד לא קיים';
-  if (!c.fileIds || c.fileIds.length === 0) return 'אין קבצים בקוד הזה';
+  if (c.mode !== 'queue' && !c.fileIds?.length) return 'אין קבצים בקוד הזה';
   if (c.singleUse && c.used) return 'הקוד כבר נוצל';
   if (c.ttlMinutes > 0) {
     const created = c.createdAt?.toMillis?.() ?? Date.now();
@@ -90,14 +90,43 @@ export async function fetchCode(code) {
   return snap.exists() ? snap.data() : null;
 }
 
-// מממש את הקוד (מסמן כמשומש אם הוא חד-פעמי) ומקבל הרשאה לקרוא את הקבצים
+// סוג הקוד: 'single' קובץ אחד, 'group' כמה קבצים שנבחרו, 'queue' כל מה שבתור
+export function codeKind(c) {
+  if (c.mode === 'queue') return 'queue';
+  return c.fileIds?.length > 1 || c.mode === 'group' ? 'group' : 'single';
+}
+
+function queueEntryAlive(q) {
+  if (q.done) return false;
+  if (!q.ttlMinutes) return true;
+  return Date.now() < (q.createdAt?.toMillis?.() ?? 0) + q.ttlMinutes * 60000;
+}
+
+// הקבצים שבתור כרגע (יש להם קוד חד-פעמי שעוד לא נוצל), לפי סדר ההעלאה
+export async function fetchQueue() {
+  await ensureUser();
+  const snap = await getDocs(collection(db, 'queue'));
+  return snap.docs
+    .filter((d) => queueEntryAlive(d.data()))
+    .sort((a, b) => (a.data().createdAt?.toMillis?.() ?? 0) - (b.data().createdAt?.toMillis?.() ?? 0))
+    .map((d) => d.id);
+}
+
+// מממש את הקוד (מסמן כמשומש אם הוא חד-פעמי) ומקבל הרשאה לקרוא את הקבצים.
+// מימוש קוד רגיל מוציא את הקבצים שלו מהתור; קוד תור לא נוגע בקודים של הקבצים.
 export async function redeemCode(code, c) {
   const user = await ensureUser();
+  const isQueue = codeKind(c) === 'queue';
   const batch = writeBatch(db);
   if (c.singleUse) {
     batch.update(doc(db, 'codes', code), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
+    if (!isQueue) {
+      const entries = await Promise.all(c.fileIds.map((id) => getDoc(doc(db, 'queue', id))));
+      entries.filter((e) => e.exists() && !e.data().done)
+        .forEach((e) => batch.update(e.ref, { done: true, usedCode: code }));
+    }
   }
-  batch.set(doc(db, 'claims', user.uid), { code, fileIds: c.fileIds, at: serverTimestamp() });
+  batch.set(doc(db, 'claims', user.uid), { code, fileIds: isQueue ? [] : c.fileIds, at: serverTimestamp(), queue: isQueue });
   await batch.commit();
 }
 

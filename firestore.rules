@@ -21,24 +21,35 @@ service cloud.firestore {
         || request.time < c.createdAt + duration.value(c.ttlMinutes, 'm');
     }
 
-    // מי שמימש קוד מקבל "אישור" ל-10 דקות לקרוא את הקבצים של אותו קוד בלבד
+    // מי שמימש קוד מקבל "אישור" ל-10 דקות לקרוא את הקבצים של אותו קוד בלבד,
+    // או (בקוד תור) את כל הקבצים שנמצאים כרגע בתור
     function claimOk(fileId) {
       let p = /databases/$(database)/documents/claims/$(request.auth.uid);
       return signedIn()
         && exists(p)
         && request.time < get(p).data.at + duration.value(10, 'm')
-        && fileId in get(p).data.fileIds;
+        && (fileId in get(p).data.fileIds
+          || (get(p).data.queue == true && inQueue(fileId)));
+    }
+
+    // קובץ בתור = יש לו קוד חד-פעמי שעדיין לא נוצל ולא פג
+    function inQueue(fileId) {
+      let q = /databases/$(database)/documents/queue/$(fileId);
+      return exists(q) && get(q).data.done == false && alive(get(q).data);
+    }
+
+    // הקוד מומש עכשיו, בכתיבה הזו, על ידי המשתמש הזה
+    function usedNow(c) {
+      return c.singleUse == true && c.used == true
+        && c.usedBy == request.auth.uid && c.usedAt == request.time;
     }
 
     function validClaim(d) {
       let c = getAfter(/databases/$(database)/documents/codes/$(d.code)).data;
-      return d.fileIds == c.fileIds && (
-        // קוד חד-פעמי: חייב להיות מסומן כמשומש בדיוק בכתיבה הזו, על ידי המשתמש הזה
-        (c.singleUse == true && c.used == true
-          && c.usedBy == request.auth.uid && c.usedAt == request.time)
-        // קוד רב-פעמי: רק צריך להיות בתוקף
-        || (c.singleUse == false && alive(c))
-      );
+      return (
+        (d.queue == true && c.mode == 'queue' && d.fileIds.size() == 0)
+        || (d.queue == false && c.mode != 'queue' && d.fileIds == c.fileIds)
+      ) && (usedNow(c) || (c.singleUse == false && alive(c)));
     }
 
     match /files/{fileId} {
@@ -100,11 +111,32 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // התור: מסמך לכל קובץ שיש לו קוד חד-פעמי פעיל. אין בו את הקוד עצמו.
+    match /queue/{fileId} {
+      allow read: if signedIn();
+      // נוצר מדף /send יחד עם הקוד
+      allow create: if isAdmin() || (signedIn()
+        && request.resource.data.keys().hasOnly(['ttlMinutes', 'createdAt', 'done'])
+        && request.resource.data.ttlMinutes == 120
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.done == false
+        && get(/databases/$(database)/documents/files/$(fileId)).data.owner == request.auth.uid);
+      // יוצא מהתור כשהקוד שלו מומש
+      allow update: if isAdmin() || (signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['done', 'usedCode'])
+        && request.resource.data.done == true
+        && request.resource.data.usedCode is string
+        && usedNow(getAfter(/databases/$(database)/documents/codes/$(request.resource.data.usedCode)).data)
+        && fileId in getAfter(/databases/$(database)/documents/codes/$(request.resource.data.usedCode)).data.fileIds);
+      allow delete: if isAdmin();
+    }
+
     match /claims/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['code', 'fileIds', 'at'])
+        && request.resource.data.keys().hasOnly(['code', 'fileIds', 'at', 'queue'])
         && request.resource.data.code is string
+        && request.resource.data.queue is bool
         && request.resource.data.at == request.time
         && validClaim(request.resource.data);
       allow delete: if isAdmin();

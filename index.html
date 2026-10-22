@@ -25,11 +25,11 @@
   </div>
 
   <script type="module">
-    import { fetchCode, codeProblem, redeemCode, downloadFile, printSequentially } from './assets/common.js?v=2';
+    import { fetchCode, codeProblem, codeKind, fetchQueue, redeemCode, downloadFile, printSequentially } from './assets/common.js?v=3';
 
     const $ = (id) => document.getElementById(id);
     const form = $('form'), input = $('code'), go = $('go'), msg = $('msg');
-    let pending = null; // { code, data } של קוד תור שממתין ללחיצה
+    let pending = null; // { code, c } של קוד קבוצה/תור שממתין ללחיצה
 
     function show(text, kind = '') {
       msg.textContent = text;
@@ -43,11 +43,18 @@
       go.disabled = false;
     }
 
+    function errText(err) {
+      return err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message;
+    }
+
     async function run(code, c) {
       await redeemCode(code, c);
+      // בקוד תור נטען את התור מחדש אחרי המימוש, כדי להדפיס את מה שיש בו ברגע זה
+      const ids = codeKind(c) === 'queue' ? await fetchQueue() : c.fileIds;
+      if (!ids.length) { show('התור ריק, אין מה להדפיס', 'err'); return; }
       show('מוריד קבצים...');
       const files = [];
-      for (const id of c.fileIds) files.push(await downloadFile(id));
+      for (const id of ids) files.push(await downloadFile(id));
       await printSequentially(files, (i, f) => {
         show(files.length > 1 ? `מדפיס ${i + 1} מתוך ${files.length}: ${f.name}` : `מדפיס: ${f.name}`);
       });
@@ -65,10 +72,15 @@
         const problem = codeProblem(c);
         if (problem) { show(problem, 'err'); go.disabled = false; return; }
 
-        if (c.mode === 'queue' || c.fileIds.length > 1) {
+        const kind = codeKind(c);
+        if (kind !== 'single') {
+          const count = kind === 'queue' ? (await fetchQueue()).length : c.fileIds.length;
+          if (kind === 'queue' && !count) { show('התור ריק, אין מה להדפיס', 'err'); go.disabled = false; return; }
           pending = { code, c };
           form.classList.add('hidden');
-          $('queueInfo').textContent = `בתור יש ${c.fileIds.length} קבצים.` + (c.singleUse ? ' לאחר הלחיצה הקוד לא יהיה תקף יותר.' : '');
+          $('queueInfo').textContent = (kind === 'queue' ? `בתור יש ${count} קבצים.` : `בקוד הזה יש ${count} קבצים.`)
+            + (c.singleUse ? ' לאחר הלחיצה הקוד לא יהיה תקף יותר.' : '');
+          $('printAll').textContent = kind === 'queue' ? 'הדפסת כל התור' : `הדפסת ${count} קבצים`;
           $('queue').classList.remove('hidden');
           show('');
           return;
@@ -78,7 +90,7 @@
         input.value = '';
       } catch (err) {
         console.error(err);
-        show(err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message, 'err');
+        show(errText(err), 'err');
       }
       go.disabled = false;
     });
@@ -91,7 +103,7 @@
         input.value = '';
       } catch (err) {
         console.error(err);
-        show(err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message, 'err');
+        show(errText(err), 'err');
       }
       $('printAll').disabled = false;
       reset();

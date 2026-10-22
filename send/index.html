@@ -29,8 +29,8 @@
   </div>
 
   <script type="module">
-    import { ACCEPT, isPrintable, uploadFile, randomCode, ensureUser, db } from '../assets/common.js?v=2';
-    import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { ACCEPT, isPrintable, uploadFile, randomCode, ensureUser, db } from '../assets/common.js?v=3';
+    import { doc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
     const fileInput = $('file'), drop = $('drop'), msg = $('msg'), bar = $('progress');
@@ -43,8 +43,10 @@
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = randomCode();
         try {
-          // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר
-          await setDoc(doc(db, 'codes', code), {
+          // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר.
+          // הקובץ נכנס לתור יחד עם יצירת הקוד.
+          const batch = writeBatch(db);
+          batch.set(doc(db, 'codes', code), {
             fileIds: [fileId],
             mode: 'single',
             singleUse: true,
@@ -53,6 +55,8 @@
             createdAt: serverTimestamp(),
             createdBy: user.uid,
           });
+          batch.set(doc(db, 'queue', fileId), { ttlMinutes: 120, createdAt: serverTimestamp(), done: false });
+          await batch.commit();
           return code;
         } catch (err) {
           if (err.code !== 'permission-denied') throw err;
