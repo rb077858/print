@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>הדפסה עם קוד</title>
+  <link rel="stylesheet" href="./assets/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>הדפסת קובץ</h1>
+      <p class="sub">הזינו את הקוד שקיבלתם, והקובץ יישלח להדפסה.</p>
+      <form id="form" autocomplete="off">
+        <input id="code" class="code-input" type="text" inputmode="numeric" maxlength="30" placeholder="000000" autofocus required>
+        <button id="go" class="big" type="submit">הדפס</button>
+      </form>
+      <div id="queue" class="hidden">
+        <p id="queueInfo"></p>
+        <button id="printAll" class="big">הדפסת כל התור</button>
+      </div>
+      <div id="msg" class="msg"></div>
+    </div>
+    <p class="muted" style="text-align:center"><a href="./send/">העלאת קובץ וקבלת קוד</a></p>
+  </div>
+
+  <script type="module">
+    import { fetchCode, codeProblem, redeemCode, downloadFile, printSequentially } from './assets/common.js';
+
+    const $ = (id) => document.getElementById(id);
+    const form = $('form'), input = $('code'), go = $('go'), msg = $('msg');
+    let pending = null; // { code, data } של קוד תור שממתין ללחיצה
+
+    function show(text, kind = '') {
+      msg.textContent = text;
+      msg.className = 'msg ' + kind;
+    }
+
+    function reset() {
+      pending = null;
+      $('queue').classList.add('hidden');
+      form.classList.remove('hidden');
+      go.disabled = false;
+    }
+
+    async function run(code, c) {
+      await redeemCode(code, c);
+      show('מוריד קבצים...');
+      const files = [];
+      for (const id of c.fileIds) files.push(await downloadFile(id));
+      await printSequentially(files, (i, f) => {
+        show(files.length > 1 ? `מדפיס ${i + 1} מתוך ${files.length}: ${f.name}` : `מדפיס: ${f.name}`);
+      });
+      show(c.singleUse ? 'ההדפסה הסתיימה. הקוד אינו תקף יותר.' : 'ההדפסה הסתיימה.', 'ok');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = input.value.trim();
+      if (!code) return;
+      go.disabled = true;
+      show('בודק קוד...');
+      try {
+        const c = await fetchCode(code);
+        const problem = codeProblem(c);
+        if (problem) { show(problem, 'err'); go.disabled = false; return; }
+
+        if (c.mode === 'queue' || c.fileIds.length > 1) {
+          pending = { code, c };
+          form.classList.add('hidden');
+          $('queueInfo').textContent = `בתור יש ${c.fileIds.length} קבצים.` + (c.singleUse ? ' לאחר הלחיצה הקוד לא יהיה תקף יותר.' : '');
+          $('queue').classList.remove('hidden');
+          show('');
+          return;
+        }
+
+        await run(code, c);
+        input.value = '';
+      } catch (err) {
+        console.error(err);
+        show(err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message, 'err');
+      }
+      go.disabled = false;
+    });
+
+    $('printAll').addEventListener('click', async () => {
+      if (!pending) return;
+      $('printAll').disabled = true;
+      try {
+        await run(pending.code, pending.c);
+        input.value = '';
+      } catch (err) {
+        console.error(err);
+        show(err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message, 'err');
+      }
+      $('printAll').disabled = false;
+      reset();
+    });
+  </script>
+</body>
+</html>

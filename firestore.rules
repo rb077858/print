@@ -1,0 +1,113 @@
+rules_version = '2';
+
+// כללי האבטחה של Firestore. יש להדביק את הקובץ הזה בקונסולת Firebase:
+// Firestore Database -> Rules -> Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && request.auth.token.email == 'rb077858@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    // קוד בתוקף: ttlMinutes == 0 פירושו "לא פג לעולם"
+    function alive(c) {
+      return c.ttlMinutes == 0
+        || request.time < c.createdAt + duration.value(c.ttlMinutes, 'm');
+    }
+
+    // מי שמימש קוד מקבל "אישור" ל-10 דקות לקרוא את הקבצים של אותו קוד בלבד
+    function claimOk(fileId) {
+      let p = /databases/$(database)/documents/claims/$(request.auth.uid);
+      return signedIn()
+        && exists(p)
+        && request.time < get(p).data.at + duration.value(10, 'm')
+        && fileId in get(p).data.fileIds;
+    }
+
+    function validClaim(d) {
+      let c = getAfter(/databases/$(database)/documents/codes/$(d.code)).data;
+      return d.fileIds == c.fileIds && (
+        // קוד חד-פעמי: חייב להיות מסומן כמשומש בדיוק בכתיבה הזו, על ידי המשתמש הזה
+        (c.singleUse == true && c.used == true
+          && c.usedBy == request.auth.uid && c.usedAt == request.time)
+        // קוד רב-פעמי: רק צריך להיות בתוקף
+        || (c.singleUse == false && alive(c))
+      );
+    }
+
+    match /files/{fileId} {
+      allow read: if isAdmin() || claimOk(fileId);
+      // העלאה מדף /send (משתמש אנונימי)
+      allow create: if isAdmin() || (signedIn()
+        && request.resource.data.keys().hasOnly(['name', 'type', 'size', 'chunks', 'owner', 'createdAt', 'source'])
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.source == 'send'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.size is int
+        && request.resource.data.size <= 15 * 1024 * 1024
+        && request.resource.data.chunks is int
+        && request.resource.data.chunks >= 1
+        && request.resource.data.chunks <= 25);
+      allow update, delete: if isAdmin();
+
+      match /chunks/{n} {
+        allow read: if isAdmin() || claimOk(fileId);
+        allow create: if isAdmin() || (signedIn()
+          && get(/databases/$(database)/documents/files/$(fileId)).data.owner == request.auth.uid
+          && int(n) < get(/databases/$(database)/documents/files/$(fileId)).data.chunks
+          && request.resource.data.keys().hasOnly(['d'])
+          && request.resource.data.d is bytes
+          && request.resource.data.d.size() <= 800000);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    match /codes/{code} {
+      // אפשר לבדוק קוד מסוים, אבל רק המנהל יכול לראות את רשימת כל הקודים
+      allow get: if signedIn();
+      allow list: if isAdmin();
+
+      // קוד שנוצר מדף /send: 6 ספרות, חד-פעמי, שעתיים, לקובץ שהמשתמש עצמו העלה
+      allow create: if isAdmin() || (signedIn()
+        && code.matches('^[0-9]{6}$')
+        && request.resource.data.keys().hasOnly(['fileIds', 'mode', 'singleUse', 'ttlMinutes', 'used', 'createdAt', 'createdBy'])
+        && request.resource.data.mode == 'single'
+        && request.resource.data.singleUse == true
+        && request.resource.data.used == false
+        && request.resource.data.ttlMinutes == 120
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.fileIds is list
+        && request.resource.data.fileIds.size() == 1
+        && get(/databases/$(database)/documents/files/$(request.resource.data.fileIds[0])).data.owner == request.auth.uid);
+
+      // מימוש קוד חד-פעמי: רק סימון כמשומש, ורק אם עדיין לא נוצל ובתוקף
+      allow update: if isAdmin() || (signedIn()
+        && resource.data.singleUse == true
+        && resource.data.used == false
+        && alive(resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['used', 'usedBy', 'usedAt'])
+        && request.resource.data.used == true
+        && request.resource.data.usedBy == request.auth.uid
+        && request.resource.data.usedAt == request.time);
+
+      allow delete: if isAdmin();
+    }
+
+    match /claims/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['code', 'fileIds', 'at'])
+        && request.resource.data.code is string
+        && request.resource.data.at == request.time
+        && validClaim(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

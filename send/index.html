@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>שליחת קובץ להדפסה</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <div class="card" id="uploadCard">
+      <h1>שליחת קובץ להדפסה</h1>
+      <p class="sub">העלו קובץ (PDF, תמונה או טקסט) וקבלו קוד חד-פעמי, תקף לשעתיים.</p>
+      <label class="drop" id="drop">
+        <input id="file" type="file">
+        <span id="dropText">לחצו לבחירת קובץ או גררו אותו לכאן</span>
+      </label>
+      <div class="progress hidden" id="progress"><div></div></div>
+      <div id="msg" class="msg"></div>
+    </div>
+
+    <div class="card hidden" id="resultCard">
+      <h2>הקוד שלכם</h2>
+      <div class="result-code" id="resultCode"></div>
+      <p class="muted" style="text-align:center" id="resultInfo"></p>
+      <button class="big" id="copy">העתק קוד</button>
+      <button class="big ghost" id="again">העלאת קובץ נוסף</button>
+    </div>
+  </div>
+
+  <script type="module">
+    import { ACCEPT, isPrintable, uploadFile, randomCode, ensureUser, db } from '../assets/common.js';
+    import { doc, setDoc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const $ = (id) => document.getElementById(id);
+    const fileInput = $('file'), drop = $('drop'), msg = $('msg'), bar = $('progress');
+    fileInput.accept = ACCEPT;
+
+    function show(text, kind = '') { msg.textContent = text; msg.className = 'msg ' + kind; }
+
+    async function createCode(fileId) {
+      const user = await ensureUser();
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const code = randomCode();
+        try {
+          // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר
+          await setDoc(doc(db, 'codes', code), {
+            fileIds: [fileId],
+            mode: 'single',
+            singleUse: true,
+            ttlMinutes: 120,
+            used: false,
+            createdAt: serverTimestamp(),
+            createdBy: user.uid,
+          });
+          return code;
+        } catch (err) {
+          if (err.code !== 'permission-denied') throw err;
+        }
+      }
+      throw new Error('לא הצלחנו ליצור קוד, נסו שוב');
+    }
+
+    async function handle(file) {
+      if (!file) return;
+      if (!isPrintable(file)) { show('אפשר להעלות רק PDF, תמונה או קובץ טקסט', 'err'); return; }
+      drop.style.pointerEvents = 'none';
+      bar.classList.remove('hidden');
+      bar.firstElementChild.style.width = '0';
+      show('מעלה את ' + file.name + '...');
+      try {
+        const id = await uploadFile(file, 'send', (p) => { bar.firstElementChild.style.width = (p * 100) + '%'; });
+        const code = await createCode(id);
+        const until = new Date(Date.now() + 2 * 3600 * 1000);
+        $('resultCode').textContent = code;
+        $('resultInfo').textContent = `${file.name} · תקף עד ${until.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })} · לשימוש אחד`;
+        $('uploadCard').classList.add('hidden');
+        $('resultCard').classList.remove('hidden');
+        show('');
+      } catch (err) {
+        console.error(err);
+        show('שגיאה: ' + err.message, 'err');
+      }
+      bar.classList.add('hidden');
+      drop.style.pointerEvents = '';
+      fileInput.value = '';
+    }
+
+    fileInput.addEventListener('change', () => handle(fileInput.files[0]));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); handle(e.dataTransfer.files[0]); });
+
+    $('copy').addEventListener('click', async () => {
+      await navigator.clipboard.writeText($('resultCode').textContent);
+      $('copy').textContent = 'הועתק ✓';
+      setTimeout(() => { $('copy').textContent = 'העתק קוד'; }, 1500);
+    });
+    $('again').addEventListener('click', () => {
+      $('resultCard').classList.add('hidden');
+      $('uploadCard').classList.remove('hidden');
+    });
+  </script>
+</body>
+</html>

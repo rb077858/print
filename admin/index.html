@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ניהול הדפסות</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+  <div class="wrap" id="loginView">
+    <div class="card">
+      <h1>ניהול</h1>
+      <p class="sub">הכניסה מותרת רק לחשבון המנהל.</p>
+      <button class="big" id="login">כניסה עם Google</button>
+      <div id="loginMsg" class="msg err"></div>
+    </div>
+  </div>
+
+  <div class="wrap wide hidden" id="adminView">
+    <div class="topbar">
+      <h1>ניהול הדפסות</h1>
+      <div class="row" style="margin:0">
+        <span class="muted" id="who"></span>
+        <button class="ghost small" id="logout">יציאה</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>העלאת קבצים</h2>
+      <label class="drop" id="drop">
+        <input id="fileInput" type="file" multiple>
+        <span>לחצו לבחירת קבצים או גררו לכאן (PDF, תמונות, טקסט)</span>
+      </label>
+      <div class="progress hidden" id="progress"><div></div></div>
+      <div id="uploadMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>קבצים</h2>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>שם</th><th>גודל</th><th>מקור</th><th>הועלה</th><th>קודים</th><th></th></tr></thead>
+          <tbody id="filesBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="codeCard">
+      <h2 id="codeFormTitle">יצירת קוד</h2>
+      <div class="row">
+        <label>קוד:
+          <input type="text" id="cfCode" placeholder="ריק = 6 ספרות אקראיות" style="direction:ltr;width:220px">
+        </label>
+      </div>
+      <div class="row">
+        <span>קבצים (סדר הבחירה = סדר ההדפסה):</span>
+        <button class="ghost small" id="cfAll">בחר הכל</button>
+        <button class="ghost small" id="cfNone">נקה</button>
+      </div>
+      <div class="file-pick" id="cfFiles"></div>
+      <div class="row">
+        <label><input type="checkbox" id="cfQueue"> קוד תור (מציג כפתור "הדפסת כל התור")</label>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="cfSingle" checked> חד-פעמי</label>
+      </div>
+      <div class="row">
+        <label>תוקף:
+          <select id="cfTtl">
+            <option value="120">שעתיים</option>
+            <option value="1440">יום</option>
+            <option value="10080">שבוע</option>
+            <option value="custom">מותאם (שעות)</option>
+            <option value="0">לא פג לעולם</option>
+          </select>
+        </label>
+        <input type="number" id="cfHours" min="1" value="5" class="hidden" style="width:90px">
+      </div>
+      <div class="row hidden" id="cfResetRow">
+        <label><input type="checkbox" id="cfReset"> לאפס: לסמן כלא-מנוצל ולהתחיל את ספירת התוקף מעכשיו</label>
+      </div>
+      <div class="row">
+        <button id="cfSave">צור קוד</button>
+        <button class="ghost hidden" id="cfCancel">ביטול עריכה</button>
+      </div>
+      <div id="cfMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="topbar" style="margin-bottom:12px">
+        <h2 style="margin:0">קודים</h2>
+        <button class="ghost small" id="cleanup">ניקוי קודים שפג תוקפם וקבצים יתומים</button>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>קוד</th><th>קבצים</th><th>סוג</th><th>שימוש</th><th>תוקף</th><th>מצב</th><th></th></tr></thead>
+          <tbody id="codesBody"></tbody>
+        </table>
+      </div>
+      <div id="codesMsg" class="msg"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeProblem, isPrintable } from '../assets/common.js';
+    import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import {
+      collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, arrayRemove,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    const CODE_RE = /^[A-Za-z0-9_-]{3,30}$/;
+
+    let files = [];   // [{id, ...data}]
+    let codes = [];   // [{id, ...data}]
+    let picked = [];  // fileIds לפי סדר הבחירה
+    let editing = null; // id של קוד בעריכה
+
+    function setMsg(el, text, kind = '') { el.textContent = text; el.className = 'msg ' + kind; }
+    const fmtDate = (ts) => ts?.toDate ? ts.toDate().toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '';
+
+    // ---------- התחברות ----------
+    $('login').addEventListener('click', async () => {
+      try {
+        await signInWithPopup(auth, new GoogleAuthProvider());
+      } catch (err) {
+        setMsg($('loginMsg'), 'ההתחברות נכשלה: ' + err.message, 'err');
+      }
+    });
+    $('logout').addEventListener('click', () => signOut(auth));
+
+    onAuthStateChanged(auth, async (user) => {
+      const ok = user && !user.isAnonymous && user.email === ADMIN_EMAIL && user.emailVerified;
+      if (user && !user.isAnonymous && !ok) {
+        setMsg($('loginMsg'), 'החשבון ' + user.email + ' אינו מורשה.', 'err');
+        await signOut(auth);
+      }
+      $('loginView').classList.toggle('hidden', !!ok);
+      $('adminView').classList.toggle('hidden', !ok);
+      if (ok) {
+        $('who').textContent = user.email;
+        await reload();
+      }
+    });
+
+    // ---------- טעינה ותצוגה ----------
+    async function reload() {
+      const [fs, cs] = await Promise.all([getDocs(collection(db, 'files')), getDocs(collection(db, 'codes'))]);
+      files = fs.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+      codes = cs.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+      picked = picked.filter((id) => files.some((f) => f.id === id));
+      renderFiles();
+      renderPicker();
+      renderCodes();
+    }
+
+    const fileName = (id) => files.find((f) => f.id === id)?.name ?? '(נמחק)';
+
+    function renderFiles() {
+      $('filesBody').innerHTML = files.length ? files.map((f) => {
+        const n = codes.filter((c) => c.fileIds?.includes(f.id)).length;
+        return `<tr>
+          <td>${esc(f.name)}</td>
+          <td>${formatSize(f.size)}</td>
+          <td>${f.source === 'send' ? '<span class="badge">/send</span>' : '<span class="badge ok">מנהל</span>'}</td>
+          <td>${fmtDate(f.createdAt)}</td>
+          <td>${n}</td>
+          <td style="white-space:nowrap">
+            <button class="small ghost" data-act="codeFor" data-id="${f.id}">צור קוד</button>
+            <button class="small danger" data-act="delFile" data-id="${f.id}">מחק</button>
+          </td></tr>`;
+      }).join('') : '<tr><td colspan="6" class="muted">אין קבצים</td></tr>';
+    }
+
+    function renderPicker() {
+      $('cfFiles').innerHTML = files.length ? files.map((f) => {
+        const i = picked.indexOf(f.id);
+        return `<label><input type="checkbox" data-id="${f.id}" ${i >= 0 ? 'checked' : ''}>
+          <span>${esc(f.name)}</span><span class="order">${i >= 0 ? i + 1 : ''}</span></label>`;
+      }).join('') : '<span class="muted">העלו קבצים קודם</span>';
+    }
+
+    function ttlText(c) {
+      if (!c.ttlMinutes) return 'לא פג';
+      const until = (c.createdAt?.toMillis?.() ?? Date.now()) + c.ttlMinutes * 60000;
+      return 'עד ' + new Date(until).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+    }
+
+    function renderCodes() {
+      $('codesBody').innerHTML = codes.length ? codes.map((c) => {
+        const problem = codeProblem(c);
+        const isQueue = c.mode === 'queue' || (c.fileIds?.length ?? 0) > 1;
+        return `<tr>
+          <td class="ltr">${esc(c.id)}</td>
+          <td>${(c.fileIds ?? []).map((id, i) => `${(c.fileIds.length > 1 ? (i + 1) + '. ' : '')}${esc(fileName(id))}`).join('<br>')}</td>
+          <td>${isQueue ? '<span class="badge">תור</span>' : 'קובץ'}</td>
+          <td>${c.singleUse ? 'חד-פעמי' : 'רב-פעמי'}</td>
+          <td>${ttlText(c)}</td>
+          <td>${problem ? `<span class="badge err">${esc(problem)}</span>` : '<span class="badge ok">פעיל</span>'}</td>
+          <td style="white-space:nowrap">
+            <button class="small ghost" data-act="edit" data-id="${esc(c.id)}">ערוך</button>
+            <button class="small ghost" data-act="reset" data-id="${esc(c.id)}">אפס</button>
+            <button class="small danger" data-act="delCode" data-id="${esc(c.id)}">מחק</button>
+          </td></tr>`;
+      }).join('') : '<tr><td colspan="7" class="muted">אין קודים</td></tr>';
+    }
+
+    // ---------- העלאה ----------
+    const fileInput = $('fileInput'), drop = $('drop');
+    fileInput.accept = ACCEPT;
+
+    async function uploadMany(list) {
+      const arr = [...list];
+      if (!arr.length) return;
+      const bar = $('progress');
+      bar.classList.remove('hidden');
+      try {
+        for (let i = 0; i < arr.length; i++) {
+          if (!isPrintable(arr[i])) { setMsg($('uploadMsg'), `דילגתי על ${arr[i].name} (סוג לא נתמך)`, 'err'); continue; }
+          setMsg($('uploadMsg'), `מעלה ${i + 1}/${arr.length}: ${arr[i].name}`);
+          await uploadFile(arr[i], 'admin', (p) => { bar.firstElementChild.style.width = ((i + p) / arr.length * 100) + '%'; });
+        }
+        setMsg($('uploadMsg'), 'ההעלאה הסתיימה', 'ok');
+      } catch (err) {
+        setMsg($('uploadMsg'), 'שגיאה: ' + err.message, 'err');
+      }
+      bar.classList.add('hidden');
+      fileInput.value = '';
+      await reload();
+    }
+
+    fileInput.addEventListener('change', () => uploadMany(fileInput.files));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); uploadMany(e.dataTransfer.files); });
+
+    // ---------- טופס קוד ----------
+    $('cfFiles').addEventListener('change', (e) => {
+      const id = e.target.dataset.id;
+      if (!id) return;
+      picked = e.target.checked ? [...picked, id] : picked.filter((x) => x !== id);
+      if (picked.length > 1) $('cfQueue').checked = true;
+      renderPicker();
+    });
+    $('cfAll').addEventListener('click', () => {
+      files.forEach((f) => { if (!picked.includes(f.id)) picked.push(f.id); });
+      if (picked.length > 1) $('cfQueue').checked = true;
+      renderPicker();
+    });
+    $('cfNone').addEventListener('click', () => { picked = []; renderPicker(); });
+    $('cfTtl').addEventListener('change', () => $('cfHours').classList.toggle('hidden', $('cfTtl').value !== 'custom'));
+
+    function ttlFromForm() {
+      const v = $('cfTtl').value;
+      if (v === 'custom') return Math.max(1, Math.round(Number($('cfHours').value) * 60));
+      return Number(v);
+    }
+
+    function ttlToForm(ttl) {
+      const opt = [...$('cfTtl').options].find((o) => o.value === String(ttl));
+      $('cfTtl').value = opt ? opt.value : 'custom';
+      if (!opt) $('cfHours').value = ttl / 60;
+      $('cfHours').classList.toggle('hidden', $('cfTtl').value !== 'custom');
+    }
+
+    function resetForm() {
+      editing = null;
+      picked = [];
+      $('cfCode').value = '';
+      $('cfQueue').checked = false;
+      $('cfSingle').checked = true;
+      $('cfReset').checked = false;
+      ttlToForm(120);
+      $('codeFormTitle').textContent = 'יצירת קוד';
+      $('cfSave').textContent = 'צור קוד';
+      $('cfCancel').classList.add('hidden');
+      $('cfResetRow').classList.add('hidden');
+      renderPicker();
+    }
+    $('cfCancel').addEventListener('click', () => { resetForm(); setMsg($('cfMsg'), ''); });
+
+    function startEdit(id) {
+      const c = codes.find((x) => x.id === id);
+      if (!c) return;
+      editing = id;
+      picked = (c.fileIds ?? []).filter((fid) => files.some((f) => f.id === fid));
+      $('cfCode').value = c.id;
+      $('cfQueue').checked = c.mode === 'queue';
+      $('cfSingle').checked = !!c.singleUse;
+      $('cfReset').checked = false;
+      ttlToForm(c.ttlMinutes ?? 0);
+      $('codeFormTitle').textContent = 'עריכת קוד ' + c.id;
+      $('cfSave').textContent = 'שמור שינויים';
+      $('cfCancel').classList.remove('hidden');
+      $('cfResetRow').classList.remove('hidden');
+      renderPicker();
+      setMsg($('cfMsg'), '');
+      $('codeCard').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function codeExists(id) {
+      return (await getDoc(doc(db, 'codes', id))).exists();
+    }
+
+    $('cfSave').addEventListener('click', async () => {
+      const msg = $('cfMsg');
+      if (!picked.length) { setMsg(msg, 'בחרו לפחות קובץ אחד', 'err'); return; }
+      let id = $('cfCode').value.trim();
+      if (id && !CODE_RE.test(id)) { setMsg(msg, 'קוד יכול להכיל אותיות באנגלית, ספרות, - ו-_ (3 עד 30 תווים)', 'err'); return; }
+
+      $('cfSave').disabled = true;
+      try {
+        if (!id) {
+          do { id = randomCode(); } while (await codeExists(id));
+        }
+        const data = {
+          fileIds: picked,
+          mode: $('cfQueue').checked || picked.length > 1 ? 'queue' : 'single',
+          singleUse: $('cfSingle').checked,
+          ttlMinutes: ttlFromForm(),
+        };
+
+        if (editing) {
+          const old = codes.find((x) => x.id === editing);
+          const reset = $('cfReset').checked;
+          const full = {
+            ...old,
+            ...data,
+            used: reset ? false : !!old.used,
+            createdAt: reset || !old.createdAt ? serverTimestamp() : old.createdAt,
+          };
+          delete full.id;
+          if (reset) { delete full.usedBy; delete full.usedAt; }
+          if (id !== editing && await codeExists(id)) throw new Error('הקוד ' + id + ' כבר קיים');
+          const batch = writeBatch(db);
+          batch.set(doc(db, 'codes', id), full);
+          if (id !== editing) batch.delete(doc(db, 'codes', editing));
+          await batch.commit();
+          setMsg(msg, 'הקוד ' + id + ' עודכן', 'ok');
+        } else {
+          if (await codeExists(id)) throw new Error('הקוד ' + id + ' כבר קיים');
+          await setDoc(doc(db, 'codes', id), { ...data, used: false, createdAt: serverTimestamp(), createdBy: auth.currentUser.uid });
+          setMsg(msg, 'נוצר קוד: ' + id, 'ok');
+        }
+        resetForm();
+        await reload();
+      } catch (err) {
+        setMsg(msg, 'שגיאה: ' + err.message, 'err');
+      }
+      $('cfSave').disabled = false;
+    });
+
+    // ---------- פעולות בטבלאות ----------
+    async function deleteFile(id) {
+      const f = files.find((x) => x.id === id);
+      if (!confirm(`למחוק את ${f?.name}? הקובץ יוסר גם מכל הקודים.`)) return;
+      const batch = writeBatch(db);
+      for (let i = 0; i < (f?.chunks ?? 0); i++) batch.delete(doc(db, 'files', id, 'chunks', String(i)));
+      batch.delete(doc(db, 'files', id));
+      for (const c of codes.filter((c) => c.fileIds?.includes(id))) {
+        if (c.fileIds.length === 1) batch.delete(doc(db, 'codes', c.id));
+        else batch.update(doc(db, 'codes', c.id), { fileIds: arrayRemove(id) });
+      }
+      await batch.commit();
+    }
+
+    document.addEventListener('click', async (e) => {
+      const btn = e.target.closest('button[data-act]');
+      if (!btn) return;
+      const { act, id } = btn.dataset;
+      try {
+        if (act === 'codeFor') {
+          resetForm();
+          picked = [id];
+          renderPicker();
+          $('codeCard').scrollIntoView({ behavior: 'smooth' });
+          return;
+        }
+        if (act === 'edit') { startEdit(id); return; }
+        if (act === 'delFile') await deleteFile(id);
+        if (act === 'delCode') {
+          if (!confirm('למחוק את הקוד ' + id + '?')) return;
+          await deleteDoc(doc(db, 'codes', id));
+        }
+        if (act === 'reset') {
+          const c = codes.find((x) => x.id === id);
+          const { id: _, usedBy, usedAt, ...rest } = c;
+          await setDoc(doc(db, 'codes', id), { ...rest, used: false, createdAt: serverTimestamp() });
+        }
+        await reload();
+      } catch (err) {
+        alert('שגיאה: ' + err.message);
+      }
+    });
+
+    $('cleanup').addEventListener('click', async () => {
+      const dead = codes.filter((c) => codeProblem(c));
+      const alive = codes.filter((c) => !codeProblem(c));
+      const used = new Set(alive.flatMap((c) => c.fileIds ?? []));
+      const orphans = files.filter((f) => f.source === 'send' && !used.has(f.id));
+      if (!dead.length && !orphans.length) { setMsg($('codesMsg'), 'אין מה לנקות', 'ok'); return; }
+      if (!confirm(`יימחקו ${dead.length} קודים לא תקפים ו-${orphans.length} קבצים שהועלו דרך /send ואין להם קוד פעיל. להמשיך?`)) return;
+      try {
+        // Firestore מגביל batch ל-500 פעולות, לכן נשלח בקבוצות
+        const ops = [
+          ...dead.map((c) => doc(db, 'codes', c.id)),
+          ...orphans.flatMap((f) => [...Array.from({ length: f.chunks }, (_, i) => doc(db, 'files', f.id, 'chunks', String(i))), doc(db, 'files', f.id)]),
+        ];
+        for (let i = 0; i < ops.length; i += 400) {
+          const batch = writeBatch(db);
+          ops.slice(i, i + 400).forEach((r) => batch.delete(r));
+          await batch.commit();
+        }
+        setMsg($('codesMsg'), 'הניקוי הסתיים', 'ok');
+      } catch (err) {
+        setMsg($('codesMsg'), 'שגיאה: ' + err.message, 'err');
+      }
+      await reload();
+    });
+  </script>
+</body>
+</html>
