@@ -2,112 +2,141 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#3b5bfd">
   <title>הדפסה עם קוד</title>
-  <link rel="stylesheet" href="./assets/style.css">
+  <link rel="stylesheet" href="./assets/style.css?v=4">
 </head>
 <body>
-  <div class="wrap">
-    <div class="card">
-      <h1>הדפסת קובץ</h1>
-      <p class="sub">הזינו את הקוד שקיבלתם, והקובץ יישלח להדפסה.</p>
-      <form id="form" autocomplete="off">
-        <input id="code" class="code-input" type="text" inputmode="numeric" maxlength="30" placeholder="000000" autofocus required>
-        <button id="go" class="big" type="submit">הדפס</button>
-      </form>
-      <div id="queue" class="hidden">
-        <p id="queueInfo"></p>
-        <button id="printAll" class="big">הדפסת כל התור</button>
+  <div class="shell center">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
       </div>
+      <div>
+        <h1>הדפסה עם קוד</h1>
+        <p>הזינו את הקוד והקובץ יישלח להדפסה</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <form id="form" autocomplete="off">
+        <input id="code" class="code-input" type="text" inputmode="numeric" maxlength="30" placeholder="••••••" autofocus required aria-label="קוד">
+        <button id="go" class="btn grad block" type="submit" style="margin-top:14px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8" rx="1"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/></svg>
+          <span>הדפס</span>
+        </button>
+      </form>
+
+      <div id="queueBox" class="hidden">
+        <div class="notice">
+          <div class="big" id="queueCount">0</div>
+          <div><strong>קבצים ממתינים בתור</strong><div class="muted" style="font-size:.9rem">הקודים שלהם ינוצלו בהדפסה</div></div>
+        </div>
+        <div class="stack">
+          <button id="printAll" class="btn grad block">הדפסת כל התור</button>
+          <button id="cancel" class="btn ghost block">ביטול</button>
+        </div>
+      </div>
+
       <div id="msg" class="msg"></div>
     </div>
-    <p class="muted" style="text-align:center"><a href="./send/">העלאת קובץ וקבלת קוד</a></p>
+
+    <div class="footer-link"><a href="./send/">רוצים להדפיס משהו? העלו קובץ וקבלו קוד ←</a></div>
   </div>
 
   <script type="module">
-    import { fetchCode, codeProblem, codeKind, fetchQueue, redeemCode, downloadFile, printSequentially } from './assets/common.js?v=3';
+    import { fetchCode, codeProblem, redeemFileCode, openQueue, consumeQueue, downloadFile, printSequentially } from './assets/common.js?v=4';
 
     const $ = (id) => document.getElementById(id);
     const form = $('form'), input = $('code'), go = $('go'), msg = $('msg');
-    let pending = null; // { code, c } של קוד קבוצה/תור שממתין ללחיצה
+    let master = null; // קוד המאסטר שהוזן, ממתין ללחיצה על "הדפסת כל התור"
 
     function show(text, kind = '') {
       msg.textContent = text;
       msg.className = 'msg ' + kind;
     }
 
-    function reset() {
-      pending = null;
-      $('queue').classList.add('hidden');
+    function busy(btn, on) {
+      btn.disabled = on;
+      btn.dataset.label ??= btn.innerHTML;
+      btn.innerHTML = on ? '<span class="spinner"></span>' : btn.dataset.label;
+    }
+
+    function backToForm() {
+      master = null;
+      $('queueBox').classList.add('hidden');
       form.classList.remove('hidden');
-      go.disabled = false;
+      input.focus();
     }
 
-    function errText(err) {
-      return err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message;
-    }
+    const errText = (err) => (err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message);
 
-    async function run(code, c) {
-      await redeemCode(code, c);
-      // בקוד תור נטען את התור מחדש אחרי המימוש, כדי להדפיס את מה שיש בו ברגע זה
-      const ids = codeKind(c) === 'queue' ? await fetchQueue() : c.fileIds;
-      if (!ids.length) { show('התור ריק, אין מה להדפיס', 'err'); return; }
+    async function printIds(ids) {
       show('מוריד קבצים...');
       const files = [];
       for (const id of ids) files.push(await downloadFile(id));
       await printSequentially(files, (i, f) => {
         show(files.length > 1 ? `מדפיס ${i + 1} מתוך ${files.length}: ${f.name}` : `מדפיס: ${f.name}`);
       });
-      show(c.singleUse ? 'ההדפסה הסתיימה. הקוד אינו תקף יותר.' : 'ההדפסה הסתיימה.', 'ok');
     }
 
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const code = input.value.trim();
       if (!code) return;
-      go.disabled = true;
-      show('בודק קוד...');
+      busy(go, true);
+      show('');
       try {
         const c = await fetchCode(code);
         const problem = codeProblem(c);
-        if (problem) { show(problem, 'err'); go.disabled = false; return; }
-
-        const kind = codeKind(c);
-        if (kind !== 'single') {
-          const count = kind === 'queue' ? (await fetchQueue()).length : c.fileIds.length;
-          if (kind === 'queue' && !count) { show('התור ריק, אין מה להדפיס', 'err'); go.disabled = false; return; }
-          pending = { code, c };
-          form.classList.add('hidden');
-          $('queueInfo').textContent = (kind === 'queue' ? `בתור יש ${count} קבצים.` : `בקוד הזה יש ${count} קבצים.`)
-            + (c.singleUse ? ' לאחר הלחיצה הקוד לא יהיה תקף יותר.' : '');
-          $('printAll').textContent = kind === 'queue' ? 'הדפסת כל התור' : `הדפסת ${count} קבצים`;
-          $('queue').classList.remove('hidden');
-          show('');
-          return;
+        if (problem) {
+          show(problem, 'err');
+        } else if (c.master) {
+          const q = await openQueue(code);
+          if (!q.length) {
+            show('התור ריק, אין מה להדפיס', 'err');
+          } else {
+            master = code;
+            $('queueCount').textContent = q.length;
+            form.classList.add('hidden');
+            $('queueBox').classList.remove('hidden');
+          }
+        } else {
+          await redeemFileCode(code, c);
+          await printIds([c.fileId]);
+          show(c.singleUse ? '✓ נשלח להדפסה. הקוד אינו תקף יותר.' : '✓ נשלח להדפסה.', 'ok');
+          input.value = '';
         }
-
-        await run(code, c);
-        input.value = '';
       } catch (err) {
         console.error(err);
         show(errText(err), 'err');
       }
-      go.disabled = false;
+      busy(go, false);
     });
 
     $('printAll').addEventListener('click', async () => {
-      if (!pending) return;
-      $('printAll').disabled = true;
+      if (!master) return;
+      busy($('printAll'), true);
       try {
-        await run(pending.code, pending.c);
+        // טוענים את התור מחדש ברגע הלחיצה, ומנצלים את הקוד של כל קובץ בו
+        const ids = await consumeQueue(await openQueue(master));
+        if (!ids.length) {
+          show('התור ריק, אין מה להדפיס', 'err');
+        } else {
+          await printIds(ids);
+          show(`✓ ${ids.length} קבצים נשלחו להדפסה`, 'ok');
+        }
         input.value = '';
       } catch (err) {
         console.error(err);
         show(errText(err), 'err');
       }
-      $('printAll').disabled = false;
-      reset();
+      busy($('printAll'), false);
+      backToForm();
     });
+
+    $('cancel').addEventListener('click', () => { show(''); backToForm(); });
   </script>
 </body>
 </html>

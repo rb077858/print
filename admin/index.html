@@ -2,258 +2,432 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#3b5bfd">
   <title>ניהול הדפסות</title>
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="stylesheet" href="../assets/style.css?v=4">
 </head>
 <body>
-  <div class="wrap" id="loginView">
+  <!-- כניסה -->
+  <div class="shell center" id="loginView">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <div>
+        <h1>ניהול הדפסות</h1>
+        <p>הכניסה למנהל בלבד</p>
+      </div>
+    </div>
     <div class="card">
-      <h1>ניהול</h1>
-      <p class="sub">הכניסה מותרת רק לחשבון המנהל.</p>
-      <button class="big" id="login">כניסה עם Google</button>
+      <button class="btn grad block" id="login">
+        <svg viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1H12v2.98h5.35c-.23 1.4-1.66 4.1-5.35 4.1-3.22 0-5.85-2.67-5.85-5.96S8.78 6.26 12 6.26c1.83 0 3.06.78 3.76 1.45l2.56-2.47C16.68 3.7 14.55 2.75 12 2.75 6.9 2.75 2.75 6.9 2.75 12S6.9 21.25 12 21.25c5.34 0 8.88-3.75 8.88-9.04 0-.6-.07-1.07-.16-1.53z"/></svg>
+        כניסה עם Google
+      </button>
       <div id="loginMsg" class="msg err"></div>
     </div>
   </div>
 
-  <div class="wrap wide hidden" id="adminView">
-    <div class="topbar">
-      <h1>ניהול הדפסות</h1>
-      <div class="row" style="margin:0">
-        <span class="muted" id="who"></span>
-        <button class="ghost small" id="logout">יציאה</button>
+  <!-- ממשק ניהול -->
+  <div class="shell wide hidden" id="adminView">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+      </div>
+      <div>
+        <h1>ניהול הדפסות</h1>
+        <p id="who"></p>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost sm" id="logout">יציאה</button>
+    </div>
+
+    <!-- קוד מאסטר -->
+    <div class="card master">
+      <h2>★ קוד מאסטר</h2>
+      <p class="hint">מדפיס את כל הקבצים שבתור ומנצל את הקוד של כל אחד מהם. לא פג אף פעם.</p>
+      <div class="master-row" id="masterView">
+        <span class="master-code" id="masterCode">—</span>
+        <button class="btn sm" id="masterEdit">עריכה</button>
+        <button class="btn sm" id="masterRandom">קוד אקראי</button>
+        <button class="btn sm hidden" id="masterDel">מחיקה</button>
+      </div>
+      <div class="master-row hidden" id="masterForm">
+        <input type="text" id="masterInput" placeholder="קוד מאסטר" style="direction:ltr;width:200px">
+        <button class="btn sm" id="masterSave">שמירה</button>
+        <button class="btn sm" id="masterCancel">ביטול</button>
       </div>
     </div>
 
+    <!-- העלאה -->
     <div class="card">
       <h2>העלאת קבצים</h2>
-      <label class="drop" id="drop">
+      <label class="drop compact" id="drop">
         <input id="fileInput" type="file" multiple>
-        <span>לחצו לבחירת קבצים או גררו לכאן (PDF, תמונות, טקסט)</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+        <span><strong>בחירת קבצים</strong> או גרירה לכאן</span>
       </label>
+      <div class="opts" style="margin-top:12px">
+        <span class="muted">לקבצים חדשים:</span>
+        <label class="switch"><input type="checkbox" id="defSingle" checked><span class="track"></span>חד-פעמי</label>
+        <select id="defTtl"></select>
+      </div>
       <div class="progress hidden" id="progress"><div></div></div>
-      <div id="uploadMsg" class="msg"></div>
     </div>
 
-    <div class="card">
-      <h2>קבצים</h2>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>שם</th><th>גודל</th><th>מקור</th><th>הועלה</th><th>קודים</th><th>בתור</th><th></th></tr></thead>
-          <tbody id="filesBody"></tbody>
-        </table>
-      </div>
+    <!-- קבצים -->
+    <div class="toolbar">
+      <div class="tabs" id="tabs"></div>
+      <div class="spacer"></div>
+      <input type="text" id="search" placeholder="חיפוש קובץ או קוד" style="width:200px">
     </div>
+    <div class="files" id="files"></div>
 
-    <div class="card" id="codeCard">
-      <h2 id="codeFormTitle">יצירת קוד</h2>
-      <div class="row">
-        <label>קוד:
-          <input type="text" id="cfCode" placeholder="ריק = 6 ספרות אקראיות" style="direction:ltr;width:220px">
-        </label>
-      </div>
-      <div class="row">
-        <label><input type="checkbox" id="cfQueue"> קוד תור: מדפיס את כל הקבצים שבתור כרגע (שהקוד שלהם עוד לא נוצל), בלי לנצל את הקודים שלהם</label>
-      </div>
-      <div id="cfPickWrap">
-      <div class="row">
-        <span>קבצים (סדר הבחירה = סדר ההדפסה; יותר מקובץ אחד = כפתור "הדפסת X קבצים"):</span>
-        <button class="ghost small" id="cfAll">בחר הכל</button>
-        <button class="ghost small" id="cfNone">נקה</button>
-      </div>
-      <div class="file-pick" id="cfFiles"></div>
-      </div>
-      <div class="row">
-        <label><input type="checkbox" id="cfSingle" checked> חד-פעמי</label>
-      </div>
-      <div class="row">
-        <label>תוקף:
-          <select id="cfTtl">
-            <option value="120">שעתיים</option>
-            <option value="1440">יום</option>
-            <option value="10080">שבוע</option>
-            <option value="custom">מותאם (שעות)</option>
-            <option value="0">לא פג לעולם</option>
-          </select>
-        </label>
-        <input type="number" id="cfHours" min="1" value="5" class="hidden" style="width:90px">
-      </div>
-      <div class="row hidden" id="cfResetRow">
-        <label><input type="checkbox" id="cfReset"> לאפס: לסמן כלא-מנוצל ולהתחיל את ספירת התוקף מעכשיו</label>
-      </div>
-      <div class="row">
-        <button id="cfSave">צור קוד</button>
-        <button class="ghost hidden" id="cfCancel">ביטול עריכה</button>
-      </div>
-      <div id="cfMsg" class="msg"></div>
-    </div>
-
-    <div class="card">
-      <div class="topbar" style="margin-bottom:12px">
-        <h2 style="margin:0">קודים</h2>
-        <button class="ghost small" id="cleanup">ניקוי קודים שפג תוקפם וקבצים יתומים</button>
-      </div>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>קוד</th><th>קבצים</th><th>סוג</th><th>שימוש</th><th>תוקף</th><th>מצב</th><th></th></tr></thead>
-          <tbody id="codesBody"></tbody>
-        </table>
-      </div>
-      <div id="codesMsg" class="msg"></div>
+    <div style="text-align:center;margin-top:24px">
+      <button class="btn ghost sm" id="cleanup">ניקוי: מחיקת קבצים מ-/send שהקוד שלהם נוצל או פג</button>
     </div>
   </div>
 
+  <div class="toast" id="toast"></div>
+
   <script type="module">
-    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeProblem, codeKind, isPrintable } from '../assets/common.js?v=3';
+    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeStatus, expiresAt, isPrintable } from '../assets/common.js?v=4';
     import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import {
-      collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, arrayRemove,
+      collection, getDocs, getDoc, doc, writeBatch, serverTimestamp,
     } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
     const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
     const CODE_RE = /^[A-Za-z0-9_-]{3,30}$/;
+    const TTLS = [[120, 'שעתיים'], [1440, 'יום'], [10080, 'שבוע'], [43200, 'חודש'], [0, 'ללא תוקף']];
 
-    let files = [];   // [{id, ...data}]
-    let queue = new Set(); // fileIds שנמצאים כרגע בתור
-    let codes = [];   // [{id, ...data}]
-    let picked = [];  // fileIds לפי סדר הבחירה
-    let editing = null; // id של קוד בעריכה
+    let files = [];          // [{id, ...}]
+    let codeOf = new Map();  // fileId -> {id, ...code}
+    let master = null;       // {id, ...}
+    let tab = 'all';
+    let editingCode = null;  // fileId שהקוד שלו בעריכה
 
-    function setMsg(el, text, kind = '') { el.textContent = text; el.className = 'msg ' + kind; }
-    const fmtDate = (ts) => ts?.toDate ? ts.toDate().toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '';
+    function toast(text, err = false) {
+      const t = $('toast');
+      t.textContent = text;
+      t.className = 'toast show' + (err ? ' err' : '');
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
+    }
+    const fail = (err) => { console.error(err); toast('שגיאה: ' + err.message, true); };
+    const ms = (ts) => ts?.toMillis?.() ?? 0;
+    const fmtTime = (t) => new Date(t).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const ttlOptions = (sel) => {
+      const list = TTLS.some(([v]) => v === sel) ? TTLS : [...TTLS, [sel, Math.round(sel / 60) + ' שעות']];
+      return list.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
+    };
+    $('defTtl').innerHTML = ttlOptions(120);
 
     // ---------- התחברות ----------
-    $('login').addEventListener('click', async () => {
-      try {
-        await signInWithPopup(auth, new GoogleAuthProvider());
-      } catch (err) {
-        setMsg($('loginMsg'), 'ההתחברות נכשלה: ' + err.message, 'err');
-      }
-    });
+    $('login').addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()).catch((err) => {
+      $('loginMsg').textContent = 'ההתחברות נכשלה: ' + err.message;
+    }));
     $('logout').addEventListener('click', () => signOut(auth));
 
     onAuthStateChanged(auth, async (user) => {
       const ok = user && !user.isAnonymous && user.email === ADMIN_EMAIL && user.emailVerified;
       if (user && !user.isAnonymous && !ok) {
-        setMsg($('loginMsg'), 'החשבון ' + user.email + ' אינו מורשה.', 'err');
+        $('loginMsg').textContent = 'החשבון ' + user.email + ' אינו מורשה.';
         await signOut(auth);
       }
       $('loginView').classList.toggle('hidden', !!ok);
       $('adminView').classList.toggle('hidden', !ok);
       if (ok) {
         $('who').textContent = user.email;
-        await reload();
+        await reload().catch(fail);
       }
     });
 
-    // ---------- טעינה ותצוגה ----------
-    async function reload() {
-      const fetchedAt = Date.now();
-      const [fs, cs] = await Promise.all([getDocs(collection(db, 'files')), getDocs(collection(db, 'codes'))]);
-      files = fs.docs.map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-      codes = cs.docs.map((d) => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-      picked = picked.filter((id) => files.some((f) => f.id === id));
-      await syncQueue(fetchedAt);
-      renderFiles();
-      renderPicker();
-      renderCodes();
+    // ---------- טעינה וסנכרון ----------
+    function queueEntry(codeId, c) {
+      return c.singleUse && !c.used ? { code: codeId, ttlMinutes: c.ttlMinutes || 0, createdAt: c.createdAt } : null;
     }
 
-    // התור נגזר מהקודים: כל קובץ שיש לו קוד חד-פעמי (לא קוד תור) שעדיין לא נוצל ולא פג.
-    // דף /send ומימוש קודים מעדכנים את התור בעצמם; כאן מתקנים אותו אחרי שינויים של המנהל.
-    async function syncQueue(fetchedAt) {
-      const want = new Map(); // fileId -> { createdAt, ttlMinutes } של הקוד שמחזיק הכי הרבה זמן
-      const endOf = (q) => (q.ttlMinutes ? (q.createdAt?.toMillis?.() ?? 0) + q.ttlMinutes * 60000 : Infinity);
-      for (const c of codes) {
-        if (codeKind(c) === 'queue' || !c.singleUse || codeProblem(c)) continue;
-        for (const id of c.fileIds) {
-          if (!files.some((f) => f.id === id)) continue;
-          const cur = want.get(id);
-          const entry = { createdAt: c.createdAt, ttlMinutes: c.ttlMinutes || 0 };
-          if (!cur || endOf(entry) > endOf(cur)) want.set(id, entry);
-        }
-      }
-      const qs = await getDocs(collection(db, 'queue'));
-      const have = new Map(qs.docs.map((d) => [d.id, d.data()]));
+    async function reload(depth = 0) {
+      const fetchedAt = Date.now();
+      const [fs, cs, qs] = await Promise.all(['files', 'codes', 'queue'].map((n) => getDocs(collection(db, n))));
+      files = fs.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
+      const codes = cs.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const queue = new Map(qs.docs.map((d) => [d.id, d.data()]));
+
       const batch = writeBatch(db);
       let ops = 0;
-      for (const [id, e] of want) {
-        const h = have.get(id);
-        if (!h || h.done || h.ttlMinutes !== e.ttlMinutes || h.createdAt?.toMillis?.() !== e.createdAt?.toMillis?.()) {
-          batch.set(doc(db, 'queue', id), { ...e, done: false });
-          ops++;
+
+      // קוד מאסטר אחד בלבד
+      const masters = codes.filter((c) => c.master).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
+      master = masters[0] ?? null;
+      masters.slice(1).forEach((c) => { batch.delete(doc(db, 'codes', c.id)); ops++; });
+
+      // קוד אישי אחד לכל קובץ (אם יש כמה, נשאר החדש ביותר)
+      codeOf = new Map();
+      for (const c of codes.filter((c) => !c.master).sort((a, b) => ms(b.createdAt) - ms(a.createdAt))) {
+        const fileExists = files.some((f) => f.id === c.fileId);
+        if (!fileExists || codeOf.has(c.fileId)) { batch.delete(doc(db, 'codes', c.id)); ops++; continue; }
+        codeOf.set(c.fileId, c);
+      }
+
+      for (const f of files) {
+        // לקובץ בלי קוד (ולא באמצע העלאה) נוצר קוד
+        if (!codeOf.has(f.id) && ms(f.createdAt) < fetchedAt - 60000) {
+          const id = await freeRandomCode();
+          const c = { fileId: f.id, singleUse: true, ttlMinutes: 120, used: false, createdAt: serverTimestamp() };
+          batch.set(doc(db, 'codes', id), c);
+          batch.set(doc(db, 'queue', f.id), { code: id, ttlMinutes: 120, createdAt: serverTimestamp() });
+          codeOf.set(f.id, { id, ...c, createdAt: null });
+          ops += 2;
+          continue;
+        }
+        // התור תואם לקוד: קוד חד-פעמי שלא נוצל
+        const c = codeOf.get(f.id);
+        if (!c) continue;
+        const want = queueEntry(c.id, c);
+        const have = queue.get(f.id);
+        if (want && (!have || have.code !== want.code || have.ttlMinutes !== want.ttlMinutes || ms(have.createdAt) !== ms(want.createdAt))) {
+          batch.set(doc(db, 'queue', f.id), want); ops++;
+        } else if (!want && have) {
+          batch.delete(doc(db, 'queue', f.id)); ops++;
         }
       }
-      for (const [id, h] of have) {
-        // לא מוחקים רשומה שנוצרה אחרי שטענו את הקודים (העלאה חדשה מ-/send)
-        if (!want.has(id) && (h.createdAt?.toMillis?.() ?? 0) < fetchedAt) {
-          batch.delete(doc(db, 'queue', id));
-          ops++;
-        }
+      for (const [fid, q] of queue) {
+        if (!files.some((f) => f.id === fid) && ms(q.createdAt) < fetchedAt) { batch.delete(doc(db, 'queue', fid)); ops++; }
       }
-      if (ops) await batch.commit();
-      queue = new Set(want.keys());
-      for (const [id, h] of have) if (!want.has(id) && (h.createdAt?.toMillis?.() ?? 0) >= fetchedAt && !h.done) queue.add(id);
+      if (ops && depth < 2) {
+        await batch.commit();
+        return reload(depth + 1);
+      }
+      render();
     }
 
-    const fileName = (id) => files.find((f) => f.id === id)?.name ?? '(נמחק)';
-
-    function renderFiles() {
-      $('filesBody').innerHTML = files.length ? files.map((f) => {
-        const n = codes.filter((c) => c.fileIds?.includes(f.id)).length;
-        return `<tr>
-          <td>${esc(f.name)}</td>
-          <td>${formatSize(f.size)}</td>
-          <td>${f.source === 'send' ? '<span class="badge">/send</span>' : '<span class="badge ok">מנהל</span>'}</td>
-          <td>${fmtDate(f.createdAt)}</td>
-          <td>${n}</td>
-          <td>${queue.has(f.id) ? '✓' : ''}</td>
-          <td style="white-space:nowrap">
-            <button class="small ghost" data-act="codeFor" data-id="${f.id}">צור קוד</button>
-            <button class="small danger" data-act="delFile" data-id="${f.id}">מחק</button>
-          </td></tr>`;
-      }).join('') : '<tr><td colspan="7" class="muted">אין קבצים</td></tr>';
+    async function freeRandomCode() {
+      for (;;) {
+        const id = randomCode();
+        if (!(await getDoc(doc(db, 'codes', id))).exists()) return id;
+      }
     }
 
-    function renderPicker() {
-      $('cfFiles').innerHTML = files.length ? files.map((f) => {
-        const i = picked.indexOf(f.id);
-        return `<label><input type="checkbox" data-id="${f.id}" ${i >= 0 ? 'checked' : ''}>
-          <span>${esc(f.name)}</span><span class="order">${i >= 0 ? i + 1 : ''}</span></label>`;
-      }).join('') : '<span class="muted">העלו קבצים קודם</span>';
+    // ---------- תצוגה ----------
+    function statusOf(f) {
+      const c = codeOf.get(f.id);
+      if (!c) return 'none';
+      const s = codeStatus(c);
+      if (s !== 'active') return s;
+      return c.singleUse ? 'queue' : 'multi';
+    }
+    const STATUS = {
+      queue: ['בתור', ''], multi: ['רב-פעמי', 'ok'], used: ['נוצל', 'mute'], expired: ['פג תוקף', 'err'], none: ['אין קוד', 'warn'],
+    };
+    const TABS = [['all', 'הכל'], ['queue', 'בתור'], ['multi', 'רב-פעמיים'], ['used', 'נוצלו'], ['expired', 'פגו']];
+
+    function render() {
+      // מאסטר
+      $('masterCode').textContent = master ? master.id : 'אין';
+      $('masterDel').classList.toggle('hidden', !master);
+      $('masterEdit').textContent = master ? 'עריכה' : 'הגדרת קוד';
+
+      // לשוניות
+      const counts = { all: files.length };
+      files.forEach((f) => { const s = statusOf(f); counts[s] = (counts[s] ?? 0) + 1; });
+      $('tabs').innerHTML = TABS.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}<span class="n">${counts[k] ?? 0}</span></button>`).join('');
+
+      const q = $('search').value.trim().toLowerCase();
+      const list = files.filter((f) => (tab === 'all' || statusOf(f) === tab)
+        && (!q || f.name.toLowerCase().includes(q) || (codeOf.get(f.id)?.id ?? '').toLowerCase().includes(q)));
+
+      $('files').innerHTML = list.length ? list.map(fileCard).join('') : `<div class="empty">${files.length ? 'אין קבצים כאן' : 'עוד אין קבצים. העלו קובץ או שלחו דרך /send'}</div>`;
     }
 
-    function ttlText(c) {
-      if (!c.ttlMinutes) return 'לא פג';
-      const until = (c.createdAt?.toMillis?.() ?? Date.now()) + c.ttlMinutes * 60000;
-      return 'עד ' + new Date(until).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+    function fileCard(f) {
+      const c = codeOf.get(f.id);
+      const st = statusOf(f);
+      const [stLabel, stCls] = STATUS[st];
+      const ext = f.name.split('.').pop().slice(0, 4).toUpperCase();
+      let expiry = '';
+      if (c && c.ttlMinutes) {
+        const t = expiresAt(c);
+        expiry = st === 'expired' ? 'פג ב-' + fmtTime(t) : 'בתוקף עד ' + fmtTime(t);
+      } else if (c) expiry = 'לא פג אף פעם';
+      if (st === 'used' && c.usedAt) expiry = 'נוצל ב-' + fmtTime(ms(c.usedAt));
+
+      const codeBox = editingCode === f.id
+        ? `<div class="codebox"><input type="text" data-codeinput="${f.id}" value="${esc(c?.id ?? '')}" maxlength="30">
+             <button class="btn sm" data-act="saveCode" data-id="${f.id}">שמירה</button>
+             <button class="btn ghost sm" data-act="cancelCode">ביטול</button></div>`
+        : `<div class="codebox"><span class="code">${esc(c?.id ?? '—')}</span>
+             <button class="btn ghost icon" data-act="copy" data-id="${f.id}" title="העתקה" aria-label="העתקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+             <button class="btn ghost icon" data-act="editCode" data-id="${f.id}" title="עריכת הקוד" aria-label="עריכת הקוד"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></div>`;
+
+      return `<div class="fcard">
+        <div class="top">
+          <div class="ficon">${esc(ext)}</div>
+          <div style="flex:1;min-width:0">
+            <div class="fname" dir="auto">${esc(f.name)}</div>
+            <div class="fmeta"><bdi>${formatSize(f.size)}</bdi> · <bdi>${f.createdAt ? fmtTime(ms(f.createdAt)) : ''}</bdi> · ${f.source === 'send' ? 'נשלח דרך האתר' : 'הועלה על ידי המנהל'}</div>
+          </div>
+          <span class="badge ${stCls}">${stLabel}</span>
+        </div>
+        ${codeBox}
+        ${c ? `<div class="opts">
+          <label class="switch"><input type="checkbox" data-act="single" data-id="${f.id}" ${c.singleUse ? 'checked' : ''}><span class="track"></span>חד-פעמי</label>
+          <select data-act="ttl" data-id="${f.id}" aria-label="תוקף">${ttlOptions(c.ttlMinutes || 0)}</select>
+        </div>
+        <div class="fmeta">${expiry}</div>` : ''}
+        <div class="actions">
+          ${st === 'used' || st === 'expired' ? `<button class="btn soft sm" data-act="renew" data-id="${f.id}">חידוש הקוד</button>` : ''}
+          <button class="btn ghost sm" data-act="newCode" data-id="${f.id}">קוד אקראי חדש</button>
+          <div style="flex:1"></div>
+          <button class="btn danger icon" data-act="delFile" data-id="${f.id}" title="מחיקה" aria-label="מחיקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
+        </div>
+      </div>`;
     }
 
-    function renderCodes() {
-      $('codesBody').innerHTML = codes.length ? codes.map((c) => {
-        const problem = codeProblem(c);
-        const kind = codeKind(c);
-        const filesCell = kind === 'queue'
-          ? `<span class="muted">כל מה שבתור (${queue.size})</span>`
-          : (c.fileIds ?? []).map((id, i) => `${(c.fileIds.length > 1 ? (i + 1) + '. ' : '')}${esc(fileName(id))}`).join('<br>');
-        const kindCell = { queue: '<span class="badge">תור</span>', group: `<span class="badge ok">${c.fileIds.length} קבצים</span>`, single: 'קובץ' }[kind];
-        return `<tr>
-          <td class="ltr">${esc(c.id)}</td>
-          <td>${filesCell}</td>
-          <td>${kindCell}</td>
-          <td>${c.singleUse ? 'חד-פעמי' : 'רב-פעמי'}</td>
-          <td>${ttlText(c)}</td>
-          <td>${problem ? `<span class="badge err">${esc(problem)}</span>` : '<span class="badge ok">פעיל</span>'}</td>
-          <td style="white-space:nowrap">
-            <button class="small ghost" data-act="edit" data-id="${esc(c.id)}">ערוך</button>
-            <button class="small ghost" data-act="reset" data-id="${esc(c.id)}">אפס</button>
-            <button class="small danger" data-act="delCode" data-id="${esc(c.id)}">מחק</button>
-          </td></tr>`;
-      }).join('') : '<tr><td colspan="7" class="muted">אין קודים</td></tr>';
+    $('tabs').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-tab]');
+      if (b) { tab = b.dataset.tab; render(); }
+    });
+    $('search').addEventListener('input', render);
+
+    // ---------- פעולות על קוד של קובץ ----------
+    // כותב את הקוד ומעדכן את התור באותה כתיבה
+    async function writeCode(fileId, codeId, data, oldId) {
+      const batch = writeBatch(db);
+      if (oldId && oldId !== codeId) batch.delete(doc(db, 'codes', oldId));
+      batch.set(doc(db, 'codes', codeId), data);
+      const q = queueEntry(codeId, data);
+      if (q) batch.set(doc(db, 'queue', fileId), q);
+      else batch.delete(doc(db, 'queue', fileId));
+      await batch.commit();
     }
+
+    function codeData(c, changes) {
+      const { id, ...rest } = c;
+      return { ...rest, ...changes };
+    }
+
+    const FRESH = () => ({ used: false, usedBy: null, usedAt: null, createdAt: serverTimestamp() });
+
+    async function codeTaken(id) {
+      return (await getDoc(doc(db, 'codes', id))).exists();
+    }
+
+    async function act(name, fid, el) {
+      const f = files.find((x) => x.id === fid);
+      const c = codeOf.get(fid);
+      switch (name) {
+        case 'copy':
+          await navigator.clipboard.writeText(c.id);
+          return toast('הקוד הועתק');
+        case 'editCode':
+          editingCode = fid;
+          render();
+          document.querySelector(`[data-codeinput="${fid}"]`)?.select();
+          return;
+        case 'cancelCode':
+          editingCode = null;
+          return render();
+        case 'saveCode': {
+          const id = document.querySelector(`[data-codeinput="${fid}"]`).value.trim();
+          if (!CODE_RE.test(id)) return toast('קוד: 3 עד 30 תווים, אותיות באנגלית, ספרות, - או _', true);
+          if (id !== c.id && await codeTaken(id)) return toast('הקוד ' + id + ' כבר תפוס', true);
+          await writeCode(fid, id, codeData(c, {}), c.id);
+          editingCode = null;
+          toast('הקוד עודכן ל-' + id);
+          break;
+        }
+        case 'newCode': {
+          const id = await freeRandomCode();
+          await writeCode(fid, id, codeData(c, FRESH()), c.id);
+          toast('קוד חדש: ' + id);
+          break;
+        }
+        case 'renew':
+          await writeCode(fid, c.id, codeData(c, FRESH()), c.id);
+          toast('הקוד חודש');
+          break;
+        case 'single':
+          await writeCode(fid, c.id, codeData(c, { singleUse: el.checked }), c.id);
+          toast(el.checked ? 'הקוד חד-פעמי' : 'הקוד רב-פעמי');
+          break;
+        case 'ttl':
+          // שינוי תוקף מתחיל את הספירה מעכשיו
+          await writeCode(fid, c.id, codeData(c, { ttlMinutes: Number(el.value), createdAt: serverTimestamp() }), c.id);
+          toast('התוקף עודכן');
+          break;
+        case 'delFile':
+          if (!confirm(`למחוק את "${f.name}" ואת הקוד שלו?`)) return;
+          await deleteFiles([f]);
+          toast('הקובץ נמחק');
+          break;
+        default:
+          return;
+      }
+      await reload();
+    }
+
+    $('files').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-act]');
+      if (b) act(b.dataset.act, b.dataset.id, b).catch(fail);
+    });
+    $('files').addEventListener('change', (e) => {
+      const el = e.target.closest('[data-act]');
+      if (el && (el.dataset.act === 'single' || el.dataset.act === 'ttl')) act(el.dataset.act, el.dataset.id, el).catch(fail);
+    });
+    $('files').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && e.target.dataset.codeinput) act('saveCode', e.target.dataset.codeinput).catch(fail);
+      if (e.key === 'Escape' && e.target.dataset.codeinput) act('cancelCode').catch(fail);
+    });
+
+    async function deleteFiles(list) {
+      const refs = [];
+      for (const f of list) {
+        for (let i = 0; i < (f.chunks ?? 0); i++) refs.push(doc(db, 'files', f.id, 'chunks', String(i)));
+        refs.push(doc(db, 'files', f.id), doc(db, 'queue', f.id));
+        const c = codeOf.get(f.id);
+        if (c) refs.push(doc(db, 'codes', c.id));
+      }
+      // batch מוגבל ל-500 פעולות
+      for (let i = 0; i < refs.length; i += 400) {
+        const batch = writeBatch(db);
+        refs.slice(i, i + 400).forEach((r) => batch.delete(r));
+        await batch.commit();
+      }
+    }
+
+    // ---------- קוד מאסטר ----------
+    function masterForm(open) {
+      $('masterView').classList.toggle('hidden', open);
+      $('masterForm').classList.toggle('hidden', !open);
+      if (open) { $('masterInput').value = master?.id ?? ''; $('masterInput').focus(); }
+    }
+    async function setMaster(id) {
+      if (!CODE_RE.test(id)) return toast('קוד: 3 עד 30 תווים, אותיות באנגלית, ספרות, - או _', true);
+      if (id !== master?.id && await codeTaken(id)) return toast('הקוד ' + id + ' כבר תפוס', true);
+      const batch = writeBatch(db);
+      if (master && master.id !== id) batch.delete(doc(db, 'codes', master.id));
+      batch.set(doc(db, 'codes', id), { master: true, createdAt: serverTimestamp() });
+      await batch.commit();
+      masterForm(false);
+      toast('קוד המאסטר: ' + id);
+      await reload();
+    }
+    $('masterEdit').addEventListener('click', () => masterForm(true));
+    $('masterCancel').addEventListener('click', () => masterForm(false));
+    $('masterSave').addEventListener('click', () => setMaster($('masterInput').value.trim()).catch(fail));
+    $('masterInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') setMaster($('masterInput').value.trim()).catch(fail); });
+    $('masterRandom').addEventListener('click', async () => setMaster(await freeRandomCode()).catch(fail));
+    $('masterDel').addEventListener('click', async () => {
+      if (!confirm('למחוק את קוד המאסטר?')) return;
+      const batch = writeBatch(db);
+      batch.delete(doc(db, 'codes', master.id));
+      await batch.commit().catch(fail);
+      toast('קוד המאסטר נמחק');
+      await reload().catch(fail);
+    });
 
     // ---------- העלאה ----------
     const fileInput = $('fileInput'), drop = $('drop');
@@ -264,19 +438,25 @@
       if (!arr.length) return;
       const bar = $('progress');
       bar.classList.remove('hidden');
+      const singleUse = $('defSingle').checked;
+      const ttlMinutes = Number($('defTtl').value);
+      let done = 0;
       try {
         for (let i = 0; i < arr.length; i++) {
-          if (!isPrintable(arr[i])) { setMsg($('uploadMsg'), `דילגתי על ${arr[i].name} (סוג לא נתמך)`, 'err'); continue; }
-          setMsg($('uploadMsg'), `מעלה ${i + 1}/${arr.length}: ${arr[i].name}`);
-          await uploadFile(arr[i], 'admin', (p) => { bar.firstElementChild.style.width = ((i + p) / arr.length * 100) + '%'; });
+          if (!isPrintable(arr[i])) { toast(`דילגתי על ${arr[i].name} (סוג לא נתמך)`, true); continue; }
+          const fid = await uploadFile(arr[i], 'admin', (p) => { bar.firstElementChild.style.width = ((i + p) / arr.length * 100) + '%'; });
+          const id = await freeRandomCode();
+          await writeCode(fid, id, { fileId: fid, singleUse, ttlMinutes, used: false, createdAt: serverTimestamp() });
+          done++;
         }
-        setMsg($('uploadMsg'), 'ההעלאה הסתיימה', 'ok');
+        if (done) toast(done === 1 ? 'הקובץ הועלה' : `${done} קבצים הועלו`);
       } catch (err) {
-        setMsg($('uploadMsg'), 'שגיאה: ' + err.message, 'err');
+        fail(err);
       }
       bar.classList.add('hidden');
+      bar.firstElementChild.style.width = '0';
       fileInput.value = '';
-      await reload();
+      await reload().catch(fail);
     }
 
     fileInput.addEventListener('change', () => uploadMany(fileInput.files));
@@ -284,192 +464,26 @@
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); uploadMany(e.dataTransfer.files); });
 
-    // ---------- טופס קוד ----------
-    $('cfFiles').addEventListener('change', (e) => {
-      const id = e.target.dataset.id;
-      if (!id) return;
-      picked = e.target.checked ? [...picked, id] : picked.filter((x) => x !== id);
-      renderPicker();
-    });
-    $('cfAll').addEventListener('click', () => {
-      files.forEach((f) => { if (!picked.includes(f.id)) picked.push(f.id); });
-      renderPicker();
-    });
-    $('cfNone').addEventListener('click', () => { picked = []; renderPicker(); });
-    const syncQueueBox = () => $('cfPickWrap').classList.toggle('hidden', $('cfQueue').checked);
-    $('cfQueue').addEventListener('change', syncQueueBox);
-    $('cfTtl').addEventListener('change', () => $('cfHours').classList.toggle('hidden', $('cfTtl').value !== 'custom'));
-
-    function ttlFromForm() {
-      const v = $('cfTtl').value;
-      if (v === 'custom') return Math.max(1, Math.round(Number($('cfHours').value) * 60));
-      return Number(v);
-    }
-
-    function ttlToForm(ttl) {
-      const opt = [...$('cfTtl').options].find((o) => o.value === String(ttl));
-      $('cfTtl').value = opt ? opt.value : 'custom';
-      if (!opt) $('cfHours').value = ttl / 60;
-      $('cfHours').classList.toggle('hidden', $('cfTtl').value !== 'custom');
-    }
-
-    function resetForm() {
-      editing = null;
-      picked = [];
-      $('cfCode').value = '';
-      $('cfQueue').checked = false;
-      $('cfSingle').checked = true;
-      $('cfReset').checked = false;
-      ttlToForm(120);
-      $('codeFormTitle').textContent = 'יצירת קוד';
-      $('cfSave').textContent = 'צור קוד';
-      $('cfCancel').classList.add('hidden');
-      $('cfResetRow').classList.add('hidden');
-      syncQueueBox();
-      renderPicker();
-    }
-    $('cfCancel').addEventListener('click', () => { resetForm(); setMsg($('cfMsg'), ''); });
-
-    function startEdit(id) {
-      const c = codes.find((x) => x.id === id);
-      if (!c) return;
-      editing = id;
-      picked = (c.fileIds ?? []).filter((fid) => files.some((f) => f.id === fid));
-      $('cfCode').value = c.id;
-      $('cfQueue').checked = c.mode === 'queue';
-      $('cfSingle').checked = !!c.singleUse;
-      $('cfReset').checked = false;
-      ttlToForm(c.ttlMinutes ?? 0);
-      $('codeFormTitle').textContent = 'עריכת קוד ' + c.id;
-      $('cfSave').textContent = 'שמור שינויים';
-      $('cfCancel').classList.remove('hidden');
-      $('cfResetRow').classList.remove('hidden');
-      syncQueueBox();
-      renderPicker();
-      setMsg($('cfMsg'), '');
-      $('codeCard').scrollIntoView({ behavior: 'smooth' });
-    }
-
-    async function codeExists(id) {
-      return (await getDoc(doc(db, 'codes', id))).exists();
-    }
-
-    $('cfSave').addEventListener('click', async () => {
-      const msg = $('cfMsg');
-      const isQueue = $('cfQueue').checked;
-      if (!isQueue && !picked.length) { setMsg(msg, 'בחרו לפחות קובץ אחד', 'err'); return; }
-      let id = $('cfCode').value.trim();
-      if (id && !CODE_RE.test(id)) { setMsg(msg, 'קוד יכול להכיל אותיות באנגלית, ספרות, - ו-_ (3 עד 30 תווים)', 'err'); return; }
-
-      $('cfSave').disabled = true;
-      try {
-        if (!id) {
-          do { id = randomCode(); } while (await codeExists(id));
-        }
-        const data = {
-          fileIds: isQueue ? [] : picked,
-          mode: isQueue ? 'queue' : picked.length > 1 ? 'group' : 'single',
-          singleUse: $('cfSingle').checked,
-          ttlMinutes: ttlFromForm(),
-        };
-
-        if (editing) {
-          const old = codes.find((x) => x.id === editing);
-          const reset = $('cfReset').checked;
-          const full = {
-            ...old,
-            ...data,
-            used: reset ? false : !!old.used,
-            createdAt: reset || !old.createdAt ? serverTimestamp() : old.createdAt,
-          };
-          delete full.id;
-          if (reset) { delete full.usedBy; delete full.usedAt; }
-          if (id !== editing && await codeExists(id)) throw new Error('הקוד ' + id + ' כבר קיים');
-          const batch = writeBatch(db);
-          batch.set(doc(db, 'codes', id), full);
-          if (id !== editing) batch.delete(doc(db, 'codes', editing));
-          await batch.commit();
-          setMsg(msg, 'הקוד ' + id + ' עודכן', 'ok');
-        } else {
-          if (await codeExists(id)) throw new Error('הקוד ' + id + ' כבר קיים');
-          await setDoc(doc(db, 'codes', id), { ...data, used: false, createdAt: serverTimestamp(), createdBy: auth.currentUser.uid });
-          setMsg(msg, 'נוצר קוד: ' + id, 'ok');
-        }
-        resetForm();
-        await reload();
-      } catch (err) {
-        setMsg(msg, 'שגיאה: ' + err.message, 'err');
-      }
-      $('cfSave').disabled = false;
-    });
-
-    // ---------- פעולות בטבלאות ----------
-    async function deleteFile(id) {
-      const f = files.find((x) => x.id === id);
-      if (!confirm(`למחוק את ${f?.name}? הקובץ יוסר גם מכל הקודים.`)) return;
-      const batch = writeBatch(db);
-      for (let i = 0; i < (f?.chunks ?? 0); i++) batch.delete(doc(db, 'files', id, 'chunks', String(i)));
-      batch.delete(doc(db, 'files', id));
-      batch.delete(doc(db, 'queue', id));
-      for (const c of codes.filter((c) => c.fileIds?.includes(id))) {
-        if (c.fileIds.length === 1) batch.delete(doc(db, 'codes', c.id));
-        else batch.update(doc(db, 'codes', c.id), { fileIds: arrayRemove(id) });
-      }
-      await batch.commit();
-    }
-
-    document.addEventListener('click', async (e) => {
-      const btn = e.target.closest('button[data-act]');
-      if (!btn) return;
-      const { act, id } = btn.dataset;
-      try {
-        if (act === 'codeFor') {
-          resetForm();
-          picked = [id];
-          renderPicker();
-          $('codeCard').scrollIntoView({ behavior: 'smooth' });
-          return;
-        }
-        if (act === 'edit') { startEdit(id); return; }
-        if (act === 'delFile') await deleteFile(id);
-        if (act === 'delCode') {
-          if (!confirm('למחוק את הקוד ' + id + '?')) return;
-          await deleteDoc(doc(db, 'codes', id));
-        }
-        if (act === 'reset') {
-          const c = codes.find((x) => x.id === id);
-          const { id: _, usedBy, usedAt, ...rest } = c;
-          await setDoc(doc(db, 'codes', id), { ...rest, used: false, createdAt: serverTimestamp() });
-        }
-        await reload();
-      } catch (err) {
-        alert('שגיאה: ' + err.message);
-      }
-    });
-
+    // ---------- ניקוי ----------
     $('cleanup').addEventListener('click', async () => {
-      const dead = codes.filter((c) => codeProblem(c));
-      const alive = codes.filter((c) => !codeProblem(c));
-      const used = new Set(alive.flatMap((c) => c.fileIds ?? []));
-      const orphans = files.filter((f) => f.source === 'send' && !used.has(f.id));
-      if (!dead.length && !orphans.length) { setMsg($('codesMsg'), 'אין מה לנקות', 'ok'); return; }
-      if (!confirm(`יימחקו ${dead.length} קודים לא תקפים ו-${orphans.length} קבצים שהועלו דרך /send ואין להם קוד פעיל. להמשיך?`)) return;
+      const dead = files.filter((f) => f.source === 'send' && ['used', 'expired'].includes(statusOf(f)));
       try {
-        // Firestore מגביל batch ל-500 פעולות, לכן נשלח בקבוצות
-        const ops = [
-          ...dead.map((c) => doc(db, 'codes', c.id)),
-          ...orphans.flatMap((f) => [...Array.from({ length: f.chunks }, (_, i) => doc(db, 'files', f.id, 'chunks', String(i))), doc(db, 'files', f.id)]),
-        ];
-        for (let i = 0; i < ops.length; i += 400) {
+        // הרשאות הורדה ישנות
+        const [acc, cl] = await Promise.all([getDocs(collection(db, 'access')), getDocs(collection(db, 'claims'))]);
+        const old = [...acc.docs, ...cl.docs].filter((d) => ms(d.data().at) < Date.now() - 15 * 60000).map((d) => d.ref);
+        if (!dead.length && !old.length) return toast('אין מה לנקות');
+        if (dead.length && !confirm(`יימחקו ${dead.length} קבצים שנשלחו מ-/send והקוד שלהם נוצל או פג. להמשיך?`)) return;
+        for (let i = 0; i < old.length; i += 400) {
           const batch = writeBatch(db);
-          ops.slice(i, i + 400).forEach((r) => batch.delete(r));
+          old.slice(i, i + 400).forEach((r) => batch.delete(r));
           await batch.commit();
         }
-        setMsg($('codesMsg'), 'הניקוי הסתיים', 'ok');
+        await deleteFiles(dead);
+        toast('הניקוי הסתיים');
+        await reload();
       } catch (err) {
-        setMsg($('codesMsg'), 'שגיאה: ' + err.message, 'err');
+        fail(err);
       }
-      await reload();
     });
   </script>
 </body>

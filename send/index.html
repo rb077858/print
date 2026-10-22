@@ -2,60 +2,88 @@
 <html lang="he" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#3b5bfd">
   <title>שליחת קובץ להדפסה</title>
-  <link rel="stylesheet" href="../assets/style.css">
+  <link rel="stylesheet" href="../assets/style.css?v=4">
 </head>
 <body>
-  <div class="wrap">
+  <div class="shell center">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+      </div>
+      <div>
+        <h1>שליחת קובץ להדפסה</h1>
+        <p>מעלים קובץ ומקבלים קוד חד-פעמי לשעתיים</p>
+      </div>
+    </div>
+
     <div class="card" id="uploadCard">
-      <h1>שליחת קובץ להדפסה</h1>
-      <p class="sub">העלו קובץ (PDF, תמונה או טקסט) וקבלו קוד חד-פעמי, תקף לשעתיים.</p>
       <label class="drop" id="drop">
         <input id="file" type="file">
-        <span id="dropText">לחצו לבחירת קובץ או גררו אותו לכאן</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg>
+        <strong>בחירת קובץ</strong>
+        <span>או גררו לכאן · PDF, תמונה או טקסט · עד 15MB</span>
       </label>
-      <div class="progress hidden" id="progress"><div></div></div>
+      <div id="uploading" class="hidden">
+        <div class="file-line"><span class="spinner" style="color:var(--accent)"></span><span id="upName"></span></div>
+        <div class="progress"><div id="bar"></div></div>
+      </div>
       <div id="msg" class="msg"></div>
     </div>
 
-    <div class="card hidden" id="resultCard">
-      <h2>הקוד שלכם</h2>
+    <div class="card hidden" id="resultCard" style="text-align:center">
+      <span class="badge ok">✓ הקובץ הועלה</span>
       <div class="result-code" id="resultCode"></div>
-      <p class="muted" style="text-align:center" id="resultInfo"></p>
-      <button class="big" id="copy">העתק קוד</button>
-      <button class="big ghost" id="again">העלאת קובץ נוסף</button>
+      <div class="result-meta" id="resultInfo"></div>
+      <div class="file-line" style="justify-content:center"><span id="resultName"></span></div>
+      <div class="stack">
+        <button class="btn grad block" id="copy">העתקת הקוד</button>
+        <button class="btn soft block hidden" id="share">שיתוף</button>
+        <button class="btn ghost block" id="again">העלאת קובץ נוסף</button>
+      </div>
     </div>
+
+    <div class="footer-link"><a href="../">יש לכם קוד? להדפסה ←</a></div>
   </div>
 
+  <div class="toast" id="toast"></div>
+
   <script type="module">
-    import { ACCEPT, isPrintable, uploadFile, randomCode, ensureUser, db } from '../assets/common.js?v=3';
+    import { ACCEPT, isPrintable, uploadFile, randomCode, ensureUser, db } from '../assets/common.js?v=4';
     import { doc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
-    const fileInput = $('file'), drop = $('drop'), msg = $('msg'), bar = $('progress');
+    const fileInput = $('file'), drop = $('drop'), msg = $('msg');
     fileInput.accept = ACCEPT;
 
     function show(text, kind = '') { msg.textContent = text; msg.className = 'msg ' + kind; }
+    function toast(text) {
+      const t = $('toast');
+      t.textContent = text;
+      t.classList.add('show');
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => t.classList.remove('show'), 1800);
+    }
 
+    // יוצר קוד אישי לקובץ ומכניס אותו לתור, בכתיבה אחת
     async function createCode(fileId) {
       const user = await ensureUser();
       for (let attempt = 0; attempt < 8; attempt++) {
         const code = randomCode();
         try {
-          // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר.
-          // הקובץ נכנס לתור יחד עם יצירת הקוד.
+          // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר
           const batch = writeBatch(db);
           batch.set(doc(db, 'codes', code), {
-            fileIds: [fileId],
-            mode: 'single',
+            fileId,
             singleUse: true,
             ttlMinutes: 120,
             used: false,
             createdAt: serverTimestamp(),
             createdBy: user.uid,
           });
-          batch.set(doc(db, 'queue', fileId), { ttlMinutes: 120, createdAt: serverTimestamp(), done: false });
+          batch.set(doc(db, 'queue', fileId), { code, ttlMinutes: 120, createdAt: serverTimestamp() });
           await batch.commit();
           return code;
         } catch (err) {
@@ -68,25 +96,26 @@
     async function handle(file) {
       if (!file) return;
       if (!isPrintable(file)) { show('אפשר להעלות רק PDF, תמונה או קובץ טקסט', 'err'); return; }
-      drop.style.pointerEvents = 'none';
-      bar.classList.remove('hidden');
-      bar.firstElementChild.style.width = '0';
-      show('מעלה את ' + file.name + '...');
+      drop.classList.add('hidden');
+      $('uploading').classList.remove('hidden');
+      $('upName').textContent = file.name;
+      $('bar').style.width = '0';
+      show('');
       try {
-        const id = await uploadFile(file, 'send', (p) => { bar.firstElementChild.style.width = (p * 100) + '%'; });
+        const id = await uploadFile(file, 'send', (p) => { $('bar').style.width = (p * 100) + '%'; });
         const code = await createCode(id);
         const until = new Date(Date.now() + 2 * 3600 * 1000);
         $('resultCode').textContent = code;
-        $('resultInfo').textContent = `${file.name} · תקף עד ${until.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })} · לשימוש אחד`;
+        $('resultInfo').textContent = `לשימוש אחד · תקף עד ${until.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })}`;
+        $('resultName').textContent = file.name;
         $('uploadCard').classList.add('hidden');
         $('resultCard').classList.remove('hidden');
-        show('');
       } catch (err) {
         console.error(err);
         show('שגיאה: ' + err.message, 'err');
       }
-      bar.classList.add('hidden');
-      drop.style.pointerEvents = '';
+      drop.classList.remove('hidden');
+      $('uploading').classList.add('hidden');
       fileInput.value = '';
     }
 
@@ -97,9 +126,15 @@
 
     $('copy').addEventListener('click', async () => {
       await navigator.clipboard.writeText($('resultCode').textContent);
-      $('copy').textContent = 'הועתק ✓';
-      setTimeout(() => { $('copy').textContent = 'העתק קוד'; }, 1500);
+      toast('הקוד הועתק');
     });
+    if (navigator.share) {
+      $('share').classList.remove('hidden');
+      $('share').addEventListener('click', () => {
+        const code = $('resultCode').textContent;
+        navigator.share({ text: `קוד להדפסה: ${code}\n${new URL('../', location.href)}` }).catch(() => {});
+      });
+    }
     $('again').addEventListener('click', () => {
       $('resultCard').classList.add('hidden');
       $('uploadCard').classList.remove('hidden');

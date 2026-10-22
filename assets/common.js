@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/1
 import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, Bytes,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js?v=3';
+import { firebaseConfig } from './firebase-config.js?v=4';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -72,17 +72,22 @@ export async function downloadFile(fileId) {
   return { id: fileId, name: m.name, type: m.type, blob };
 }
 
-// מחזיר null אם הקוד תקף, אחרת הודעת שגיאה
-export function codeProblem(c) {
-  if (!c) return 'הקוד לא קיים';
-  if (c.mode !== 'queue' && !c.fileIds?.length) return 'אין קבצים בקוד הזה';
-  if (c.singleUse && c.used) return 'הקוד כבר נוצל';
-  if (c.ttlMinutes > 0) {
-    const created = c.createdAt?.toMillis?.() ?? Date.now();
-    if (Date.now() > created + c.ttlMinutes * 60000) return 'פג תוקף הקוד';
-  }
-  return null;
+// סטטוס של קוד קובץ: 'active' | 'used' | 'expired' | 'missing'
+export function codeStatus(c) {
+  if (!c) return 'missing';
+  if (c.master) return 'active';
+  if (c.singleUse && c.used) return 'used';
+  if (c.ttlMinutes > 0 && Date.now() > expiresAt(c)) return 'expired';
+  return 'active';
 }
+
+export function expiresAt(c) {
+  if (!c.ttlMinutes) return Infinity;
+  return (c.createdAt?.toMillis?.() ?? Date.now()) + c.ttlMinutes * 60000;
+}
+
+const PROBLEMS = { missing: 'הקוד לא קיים', used: 'הקוד כבר נוצל', expired: 'פג תוקף הקוד' };
+export const codeProblem = (c) => PROBLEMS[codeStatus(c)] ?? null;
 
 export async function fetchCode(code) {
   await ensureUser();
@@ -90,44 +95,43 @@ export async function fetchCode(code) {
   return snap.exists() ? snap.data() : null;
 }
 
-// סוג הקוד: 'single' קובץ אחד, 'group' כמה קבצים שנבחרו, 'queue' כל מה שבתור
-export function codeKind(c) {
-  if (c.mode === 'queue') return 'queue';
-  return c.fileIds?.length > 1 || c.mode === 'group' ? 'group' : 'single';
-}
-
-function queueEntryAlive(q) {
-  if (q.done) return false;
-  if (!q.ttlMinutes) return true;
-  return Date.now() < (q.createdAt?.toMillis?.() ?? 0) + q.ttlMinutes * 60000;
-}
-
-// הקבצים שבתור כרגע (יש להם קוד חד-פעמי שעוד לא נוצל), לפי סדר ההעלאה
-export async function fetchQueue() {
-  await ensureUser();
-  const snap = await getDocs(collection(db, 'queue'));
-  return snap.docs
-    .filter((d) => queueEntryAlive(d.data()))
-    .sort((a, b) => (a.data().createdAt?.toMillis?.() ?? 0) - (b.data().createdAt?.toMillis?.() ?? 0))
-    .map((d) => d.id);
-}
-
-// מממש את הקוד (מסמן כמשומש אם הוא חד-פעמי) ומקבל הרשאה לקרוא את הקבצים.
-// מימוש קוד רגיל מוציא את הקבצים שלו מהתור; קוד תור לא נוגע בקודים של הקבצים.
-export async function redeemCode(code, c) {
+// מממש קוד של קובץ: מסמן אותו כמשומש (אם הוא חד-פעמי), מוציא את הקובץ מהתור
+// ומקבל הרשאה להוריד אותו ל-10 דקות. הכול בכתיבה אטומית אחת.
+export async function redeemFileCode(code, c) {
   const user = await ensureUser();
-  const isQueue = codeKind(c) === 'queue';
   const batch = writeBatch(db);
   if (c.singleUse) {
     batch.update(doc(db, 'codes', code), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
-    if (!isQueue) {
-      const entries = await Promise.all(c.fileIds.map((id) => getDoc(doc(db, 'queue', id))));
-      entries.filter((e) => e.exists() && !e.data().done)
-        .forEach((e) => batch.update(e.ref, { done: true, usedCode: code }));
+    batch.delete(doc(db, 'queue', c.fileId));
+  }
+  batch.set(doc(db, 'access', c.fileId + '_' + user.uid), { fileId: c.fileId, code, at: serverTimestamp() });
+  await batch.commit();
+}
+
+// מוכיח שהמשתמש הזין את קוד המאסטר, ואז מחזיר את התור (לפי סדר ההעלאה)
+export async function openQueue(masterCode) {
+  const user = await ensureUser();
+  await setDoc(doc(db, 'claims', user.uid), { code: masterCode, at: serverTimestamp() });
+  const snap = await getDocs(collection(db, 'queue'));
+  return snap.docs
+    .map((d) => ({ fileId: d.id, ...d.data() }))
+    .filter((q) => !q.ttlMinutes || Date.now() < expiresAt(q))
+    .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+}
+
+// קוד המאסטר מנצל את הקוד של כל קובץ שבתור. מחזיר את הקבצים שנוצלו בהצלחה
+// (קובץ שמישהו אחר הספיק לנצל בינתיים פשוט מדולג).
+export async function consumeQueue(entries) {
+  const taken = [];
+  for (const q of entries) {
+    try {
+      await redeemFileCode(q.code, { fileId: q.fileId, singleUse: true });
+      taken.push(q.fileId);
+    } catch (err) {
+      console.warn('skipped', q.fileId, err);
     }
   }
-  batch.set(doc(db, 'claims', user.uid), { code, fileIds: isQueue ? [] : c.fileIds, at: serverTimestamp(), queue: isQueue });
-  await batch.commit();
+  return taken;
 }
 
 // ---------- הדפסה ----------
