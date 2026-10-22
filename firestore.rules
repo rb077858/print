@@ -3,18 +3,23 @@ rules_version = '2';
 // כללי האבטחה של Firestore. מועלים עם: firebase deploy --only firestore:rules
 //
 // מבנה:
-//   files/{fileId}            פרטי קובץ, וחתיכות התוכן ב-files/{fileId}/chunks/{n}
-//   codes/{code}              קוד אישי של קובץ: { fileId, singleUse, ttlMinutes, used, createdAt, ... }
-//                             או קוד המאסטר: { master: true }
-//   queue/{fileId}            קובץ שהקוד החד-פעמי שלו עוד לא נוצל: { code, ttlMinutes, createdAt }
-//   access/{fileId}_{uid}     הרשאת הורדה ל-10 דקות, נוצרת יחד עם מימוש הקוד
-//   claims/{uid}              הוכחה שהמשתמש הזין את קוד המאסטר (ל-10 דקות)
-//   users/{email}             משתמש שמורשה לשלוח קבצים: { approved, blocked, activeUntil, ... }
+//   users/{email}             משתמש: { name, approved, blocked, activeUntil, personalCode, ... }
+//   files/{fileId}            קובץ בתור של משתמש: { name, ownerEmail, inQueue, code, ... }
+//                             והתוכן בחתיכות: files/{fileId}/chunks/{n}
+//   codes/{code}              kind: 'file'     קוד של קובץ { fileId, ownerEmail, singleUse, ttlMinutes, used, createdAt }
+//                             kind: 'personal' קוד אישי של משתמש { email }
+//                             kind: 'master'   קוד המאסטר של המנהל
+//   claims/{uid}              מי שהזין קוד אישי / מאסטר: { code, email ('*' למאסטר), at } ל-30 דקות
+//   access/{fileId}_{uid}     הרשאת הורדה ל-10 דקות אחרי מימוש קוד של קובץ
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() {
       return request.auth != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email;
     }
 
     function isAdmin() {
@@ -23,17 +28,22 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
-    // מי שמורשה לשלוח קבצים: המנהל, או משתמש Google שהמנהל אישר, לא חסום, ובתוקף
-    function canSend() {
-      return isAdmin() || (signedIn()
+    function google() {
+      return signedIn()
         && request.auth.token.firebase.sign_in_provider == 'google.com'
-        && request.auth.token.email_verified == true
-        && activeUser(get(/databases/$(database)/documents/users/$(request.auth.token.email)).data));
+        && request.auth.token.email_verified == true;
     }
 
     function activeUser(u) {
       return u.approved == true && u.blocked == false
         && (u.activeUntil == null || request.time < u.activeUntil);
+    }
+
+    // משתמש מחובר שמורשה להשתמש באתר (או המנהל)
+    function canSend() {
+      return isAdmin() || (google()
+        && exists(/databases/$(database)/documents/users/$(myEmail()))
+        && activeUser(get(/databases/$(database)/documents/users/$(myEmail())).data));
     }
 
     // ttlMinutes == 0 פירושו "לא פג לעולם"
@@ -48,43 +58,84 @@ service cloud.firestore {
         && c.usedBy == request.auth.uid && c.usedAt == request.time;
     }
 
+    // מי שהזין קוד אישי של email (או את קוד המאסטר) ב-30 הדקות האחרונות
+    function holderOf(email) {
+      let p = /databases/$(database)/documents/claims/$(request.auth.uid);
+      return signedIn() && exists(p)
+        && request.time < get(p).data.at + duration.value(30, 'm')
+        && (get(p).data.email == email || get(p).data.email == '*');
+    }
+
     function hasAccess(fileId) {
       let p = /databases/$(database)/documents/access/$(fileId + '_' + request.auth.uid);
       return signedIn() && exists(p) && request.time < get(p).data.at + duration.value(10, 'm');
     }
 
-    function isMasterHolder() {
-      let p = /databases/$(database)/documents/claims/$(request.auth.uid);
-      return signedIn() && exists(p)
-        && request.time < get(p).data.at + duration.value(10, 'm')
-        && get(/databases/$(database)/documents/codes/$(get(p).data.code)).data.get('master', false) == true;
+    function ownsFile(f) {
+      return canSend() && f.ownerEmail == myEmail();
     }
 
     match /files/{fileId} {
-      allow read: if isAdmin() || hasAccess(fileId);
-      // העלאה מדף /send (משתמש אנונימי)
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.ownerEmail == myEmail() && canSend())
+        || holderOf(resource.data.ownerEmail)
+        || hasAccess(fileId);
+
+      // העלאה לתור של המשתמש
       allow create: if isAdmin() || (canSend()
-        && request.resource.data.keys().hasOnly(['name', 'type', 'size', 'chunks', 'owner', 'ownerEmail', 'createdAt', 'source'])
+        && request.resource.data.keys().hasOnly(['name', 'type', 'size', 'chunks', 'owner', 'ownerEmail', 'createdAt', 'source', 'inQueue', 'code'])
         && request.resource.data.owner == request.auth.uid
-        && request.resource.data.ownerEmail == request.auth.token.email
-        && request.resource.data.source == 'send'
+        && request.resource.data.ownerEmail == myEmail()
         && request.resource.data.createdAt == request.time
+        && request.resource.data.inQueue == true
+        && request.resource.data.code == null
+        && request.resource.data.name is string
         && request.resource.data.size is int
         && request.resource.data.size <= 15 * 1024 * 1024
         && request.resource.data.chunks is int
         && request.resource.data.chunks >= 1
         && request.resource.data.chunks <= 25);
-      allow update, delete: if isAdmin();
+
+      allow update: if isAdmin()
+        // הבעלים משנה את שם הקובץ
+        || (ownsFile(resource.data)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 200)
+        // הבעלים מצמיד לקובץ את הקוד שנוצר לו (פעם אחת)
+        || (ownsFile(resource.data)
+          && resource.data.code == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['code'])
+          && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.kind == 'file'
+          && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.fileId == fileId)
+        // הדפסה: הקובץ יוצא מהתור. מותר למי שמחזיק בקוד האישי / מאסטר,
+        // או למי שמימש עכשיו את הקוד של הקובץ
+        || (signedIn()
+          && resource.data.inQueue == true
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['inQueue', 'printedAt', 'printedBy'])
+          && request.resource.data.inQueue == false
+          && request.resource.data.printedAt == request.time
+          && request.resource.data.printedBy == request.auth.uid
+          && (holderOf(resource.data.ownerEmail)
+            || (resource.data.code != null
+              && usedNow(getAfter(/databases/$(database)/documents/codes/$(resource.data.code)).data))));
+
+      allow delete: if isAdmin() || ownsFile(resource.data);
 
       match /chunks/{n} {
-        allow read: if isAdmin() || hasAccess(fileId);
+        allow read: if isAdmin()
+          || hasAccess(fileId)
+          || holderOf(get(/databases/$(database)/documents/files/$(fileId)).data.ownerEmail)
+          || ownsFile(get(/databases/$(database)/documents/files/$(fileId)).data);
         allow create: if isAdmin() || (canSend()
           && get(/databases/$(database)/documents/files/$(fileId)).data.owner == request.auth.uid
           && int(n) < get(/databases/$(database)/documents/files/$(fileId)).data.chunks
           && request.resource.data.keys().hasOnly(['d'])
           && request.resource.data.d is bytes
           && request.resource.data.d.size() <= 800000);
-        allow update, delete: if isAdmin();
+        allow delete: if isAdmin() || ownsFile(get(/databases/$(database)/documents/files/$(fileId)).data);
+        allow update: if isAdmin();
       }
     }
 
@@ -93,20 +144,30 @@ service cloud.firestore {
       allow get: if signedIn();
       allow list: if isAdmin();
 
-      // קוד שנוצר מדף /send: 6 ספרות, חד-פעמי, שעתיים, לקובץ שהמשתמש עצמו העלה
-      allow create: if isAdmin() || (canSend()
-        && code.matches('^[0-9]{6}$')
-        && request.resource.data.keys().hasOnly(['fileId', 'singleUse', 'ttlMinutes', 'used', 'createdAt', 'createdBy'])
-        && request.resource.data.singleUse == true
-        && request.resource.data.used == false
-        && request.resource.data.ttlMinutes == 120
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.createdBy == request.auth.uid
-        && get(/databases/$(database)/documents/files/$(request.resource.data.fileId)).data.owner == request.auth.uid);
+      allow create: if isAdmin()
+        // קוד לקובץ חדש: 6 ספרות, חד-פעמי, שעתיים, לקובץ של המשתמש עצמו
+        || (canSend()
+          && code.matches('^[0-9]{6}$')
+          && request.resource.data.keys().hasOnly(['kind', 'fileId', 'ownerEmail', 'singleUse', 'ttlMinutes', 'used', 'createdAt', 'createdBy'])
+          && request.resource.data.kind == 'file'
+          && request.resource.data.singleUse == true
+          && request.resource.data.used == false
+          && request.resource.data.ttlMinutes == 120
+          && request.resource.data.createdAt == request.time
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.ownerEmail == myEmail()
+          && get(/databases/$(database)/documents/files/$(request.resource.data.fileId)).data.ownerEmail == myEmail())
+        // קוד אישי חדש של המשתמש עצמו
+        || (canSend()
+          && code.matches('^[0-9]{6}$')
+          && request.resource.data.keys().hasOnly(['kind', 'email', 'createdAt'])
+          && request.resource.data.kind == 'personal'
+          && request.resource.data.email == myEmail()
+          && request.resource.data.createdAt == request.time);
 
-      // מימוש קוד חד-פעמי: רק סימון כמשומש, ורק אם עדיין לא נוצל ובתוקף
+      // מימוש קוד של קובץ: רק סימון כמשומש, ורק אם עדיין לא נוצל ובתוקף
       allow update: if isAdmin() || (signedIn()
-        && resource.data.get('master', false) == false
+        && resource.data.kind == 'file'
         && resource.data.singleUse == true
         && resource.data.used == false
         && alive(resource.data)
@@ -115,30 +176,10 @@ service cloud.firestore {
         && request.resource.data.usedBy == request.auth.uid
         && request.resource.data.usedAt == request.time);
 
-      allow delete: if isAdmin();
-    }
-
-    match /queue/{fileId} {
-      // רק המנהל ומי שהזין את קוד המאסטר רואים את התור (הוא כולל את הקודים)
-      allow read: if isAdmin() || isMasterHolder();
-      // נוצר מדף /send יחד עם הקוד
-      allow create: if isAdmin() || (canSend()
-        && request.resource.data.keys().hasOnly(['code', 'ttlMinutes', 'createdAt'])
-        && request.resource.data.ttlMinutes == 120
-        && request.resource.data.createdAt == request.time
-        && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.fileId == fileId
-        && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.createdBy == request.auth.uid);
-      // יוצא מהתור כשהקוד שלו מומש
-      allow delete: if isAdmin() || (signedIn() && (resource == null
-        || usedNow(getAfter(/databases/$(database)/documents/codes/$(resource.data.code)).data)));
-      allow update: if isAdmin();
-    }
-
-    function validAccess(fileId, d) {
-      let c = getAfter(/databases/$(database)/documents/codes/$(d.code)).data;
-      return c.get('master', false) == false
-        && c.fileId == fileId
-        && (usedNow(c) || (c.singleUse == false && alive(c)));
+      // המשתמש מוחק את הקוד האישי הישן שלו, או קוד של קובץ שהוא מוחק
+      allow delete: if isAdmin() || (canSend()
+        && ((resource.data.kind == 'personal' && resource.data.email == myEmail())
+          || (resource.data.kind == 'file' && resource.data.ownerEmail == myEmail())));
     }
 
     match /access/{id} {
@@ -148,33 +189,59 @@ service cloud.firestore {
         && request.resource.data.code is string
         && id == request.resource.data.fileId + '_' + request.auth.uid
         && request.resource.data.at == request.time
-        && validAccess(request.resource.data.fileId, request.resource.data);
+        && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.kind == 'file'
+        && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.fileId == request.resource.data.fileId
+        && (usedNow(getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data)
+          || (getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.singleUse == false
+            && alive(getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data)));
       allow read, delete: if isAdmin();
     }
 
     match /claims/{uid} {
       allow create, update: if signedIn() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['code', 'at'])
+        && request.resource.data.keys().hasOnly(['code', 'email', 'at'])
         && request.resource.data.code is string
+        && request.resource.data.email is string
         && request.resource.data.at == request.time
-        && get(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.get('master', false) == true;
+        && validClaim(request.resource.data);
       allow read, delete: if isAdmin();
     }
 
+    function validClaim(d) {
+      let c = get(/databases/$(database)/documents/codes/$(d.code)).data;
+      return (c.kind == 'master' && d.email == '*')
+        || (c.kind == 'personal' && c.email == d.email && personalOk(d.email, d.code));
+    }
+
+    function personalOk(email, code) {
+      let u = get(/databases/$(database)/documents/users/$(email)).data;
+      return u.get('personalCode', '') == code && activeUser(u);
+    }
+
     match /users/{email} {
-      allow get: if isAdmin() || (signedIn() && request.auth.token.email == email);
-      allow list: if isAdmin();
+      allow get: if isAdmin() || (signedIn() && myEmail() == email);
+      // מי שהזין את קוד המאסטר רואה את רשימת המשתמשים
+      allow list: if isAdmin() || holderOf('*');
       // משתמש חדש מבקש גישה; רק המנהל יכול לאשר
-      allow create: if isAdmin() || (signedIn()
-        && request.auth.token.firebase.sign_in_provider == 'google.com'
-        && request.auth.token.email_verified == true
-        && request.auth.token.email == email
+      allow create: if isAdmin() || (google()
+        && myEmail() == email
         && request.resource.data.keys().hasOnly(['name', 'requestedAt', 'approved', 'blocked', 'activeUntil'])
         && request.resource.data.approved == false
         && request.resource.data.blocked == false
         && request.resource.data.activeUntil == null
         && request.resource.data.requestedAt == request.time);
-      allow update, delete: if isAdmin();
+      // המשתמש מחליף את הקוד האישי שלו (לקוד אישי חדש שהוא יצר)
+      allow update: if isAdmin() || (canSend()
+        && myEmail() == email
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['personalCode'])
+        && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.personalCode)).data.kind == 'personal'
+        && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.personalCode)).data.email == email);
+      allow delete: if isAdmin();
+    }
+
+    // שארית ממבנה קודם, נמחקת אוטומטית בדף הניהול
+    match /queue/{fileId} {
+      allow read, delete: if isAdmin();
     }
   }
 }

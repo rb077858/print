@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3b5bfd">
   <title>ניהול הדפסות</title>
-  <link rel="stylesheet" href="../assets/style.css?v=5">
+  <link rel="stylesheet" href="../assets/style.css?v=6">
 </head>
 <body>
   <!-- כניסה -->
@@ -34,18 +34,19 @@
       <div class="brand-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
       </div>
-      <div>
+      <div style="min-width:0">
         <h1>ניהול הדפסות</h1>
         <p id="who"></p>
       </div>
       <div class="spacer"></div>
+      <a class="btn ghost sm" href="../dash/">התור שלי</a>
       <button class="btn ghost sm" id="logout">יציאה</button>
     </div>
 
     <!-- קוד מאסטר -->
     <div class="card master">
       <h2>★ קוד מאסטר</h2>
-      <p class="hint">מדפיס את כל הקבצים שבתור ומנצל את הקוד של כל אחד מהם. לא פג אף פעם.</p>
+      <p class="hint">בדף ההדפסה הוא מציג את התורים של כל המשתמשים. אפשר להדפיס הכל, משתמשים נבחרים או קובץ בודד. על כל עמוד מודפסים השם והמייל של בעל הקובץ. לא פג אף פעם.</p>
       <div class="master-row" id="masterView">
         <span class="master-code" id="masterCode">—</span>
         <button class="btn sm" id="masterEdit">עריכה</button>
@@ -60,45 +61,15 @@
     </div>
 
     <div class="tabs" id="nav" style="margin-bottom:16px;width:fit-content;max-width:100%">
-      <button data-view="files" class="on">קבצים</button>
-      <button data-view="users">משתמשים <span class="badge warn hidden" id="pendingBadge"></span></button>
-    </div>
-
-    <div id="filesSection">
-    <!-- העלאה -->
-    <div class="card">
-      <h2>העלאת קבצים</h2>
-      <label class="drop compact" id="drop">
-        <input id="fileInput" type="file" multiple>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
-        <span><strong>בחירת קבצים</strong> או גרירה לכאן</span>
-      </label>
-      <div class="opts" style="margin-top:12px">
-        <span class="muted">לקבצים חדשים:</span>
-        <label class="switch"><input type="checkbox" id="defSingle" checked><span class="track"></span>חד-פעמי</label>
-        <select id="defTtl"></select>
-      </div>
-      <div class="progress hidden" id="progress"><div></div></div>
-    </div>
-
-    <!-- קבצים -->
-    <div class="toolbar">
-      <div class="tabs" id="tabs"></div>
-      <div class="spacer"></div>
-      <input type="text" id="search" placeholder="חיפוש קובץ או קוד" style="width:200px">
-    </div>
-    <div class="files" id="files"></div>
-
-    <div style="text-align:center;margin-top:24px">
-      <button class="btn ghost sm" id="cleanup">ניקוי: מחיקת קבצים שנשלחו דרך האתר והקוד שלהם נוצל או פג</button>
-    </div>
+      <button data-view="users" class="on">משתמשים <span class="badge warn hidden" id="pendingBadge"></span></button>
+      <button data-view="files">קבצים</button>
     </div>
 
     <!-- משתמשים -->
-    <div id="usersSection" class="hidden">
+    <div id="usersSection">
       <div class="card">
         <h2>הוספת משתמש</h2>
-        <p class="hint">רק משתמשים שאושרו כאן יכולים להתחבר עם Google ולשלוח קבצים בדף השליחה. מי שמתחבר בלי אישור מופיע כאן כ"ממתין".</p>
+        <p class="hint">רק משתמשים מאושרים יכולים להתחבר עם Google, לנהל תור ב-<bdi>/dash</bdi> ולקבל קוד אישי. מי שמתחבר בלי אישור מופיע כאן כ"ממתין".</p>
         <div class="opts">
           <input type="text" id="newEmail" placeholder="email@gmail.com" style="direction:ltr;flex:1;min-width:200px">
           <select id="newPeriod"></select>
@@ -111,29 +82,50 @@
       </div>
       <div class="files" id="users"></div>
     </div>
+
+    <!-- קבצים -->
+    <div id="filesSection" class="hidden">
+      <div class="toolbar">
+        <div class="tabs" id="tabs"></div>
+        <div class="spacer"></div>
+        <select id="ownerFilter" style="max-width:220px"></select>
+        <input type="text" id="search" placeholder="חיפוש קובץ או קוד" style="width:180px">
+      </div>
+      <div class="files" id="files"></div>
+      <div style="text-align:center;margin-top:24px">
+        <button class="btn ghost sm" id="cleanup">ניקוי: מחיקת כל הקבצים שכבר הודפסו</button>
+      </div>
+    </div>
   </div>
 
   <div class="toast" id="toast"></div>
 
   <script type="module">
-    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeStatus, expiresAt, isPrintable } from '../assets/common.js?v=5';
+    import {
+      auth, db, ADMIN_EMAIL, FILE_CODE_TTL, freeRandomCode, formatSize, codeStatus, expiresAt, ms,
+    } from '../assets/common.js?v=6';
     import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import {
       collection, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp,
     } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
-    const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
     const CODE_RE = /^[A-Za-z0-9_-]{3,30}$/;
+    const CODE_HINT = 'קוד: 3 עד 30 תווים, אותיות באנגלית, ספרות, - או _';
     const TTLS = [[120, 'שעתיים'], [1440, 'יום'], [10080, 'שבוע'], [43200, 'חודש'], [0, 'ללא תוקף']];
+    const ICON_EDIT = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+    const ICON_COPY = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+    const ICON_DEL = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
 
     let files = [];          // [{id, ...}]
-    let codeOf = new Map();  // fileId -> {id, ...code}
-    let master = null;       // {id, ...}
-    let tab = 'all';
-    let editingCode = null;  // fileId שהקוד שלו בעריכה
+    let codes = new Map();   // codeId -> data
     let users = [];          // [{id: email, ...}]
-    let userTab = 'pending';
+    let master = null;       // {id, ...}
+    let fileTab = 'queue';
+    let userTab = 'active';
+    let ownerFilter = '';
+    let editing = null;      // 'file:<id>' / 'user:<email>' שהקוד שלו בעריכה
 
     function toast(text, err = false) {
       const t = $('toast');
@@ -143,17 +135,19 @@
       toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
     }
     const fail = (err) => { console.error(err); toast('שגיאה: ' + err.message, true); };
-    const ms = (ts) => ts?.toMillis?.() ?? 0;
     const fmtTime = (t) => new Date(t).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const fmtDay = (t) => new Date(t).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+    const isAdminEmail = (e) => e === ADMIN_EMAIL;
+    const userName = (email) => users.find((u) => u.id === email)?.name || '';
     const ttlOptions = (sel) => {
       const list = TTLS.some(([v]) => v === sel) ? TTLS : [...TTLS, [sel, Math.round(sel / 60) + ' שעות']];
       return list.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
     };
-    $('defTtl').innerHTML = ttlOptions(120);
+    const codeTaken = async (id) => (await getDoc(doc(db, 'codes', id))).exists();
 
     // ---------- התחברות ----------
     $('login').addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()).catch((err) => {
-      $('loginMsg').textContent = 'ההתחברות נכשלה: ' + err.message;
+      if (err.code !== 'auth/popup-closed-by-user') $('loginMsg').textContent = 'ההתחברות נכשלה: ' + err.message;
     }));
     $('logout').addEventListener('click', () => signOut(auth));
 
@@ -171,132 +165,342 @@
       }
     });
 
-    // ---------- טעינה וסנכרון ----------
-    function queueEntry(codeId, c) {
-      return c.singleUse && !c.used ? { code: codeId, ttlMinutes: c.ttlMinutes || 0, createdAt: c.createdAt } : null;
-    }
-
+    // ---------- טעינה, סנכרון והסבה ממבנה קודם ----------
     async function reload(depth = 0) {
       const fetchedAt = Date.now();
-      const [fs, cs, qs, us] = await Promise.all(['files', 'codes', 'queue', 'users'].map((n) => getDocs(collection(db, n))));
-      users = us.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const [fs, cs, us, qs] = await Promise.all(['files', 'codes', 'users', 'queue'].map((n) => getDocs(collection(db, n))));
       files = fs.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
-      const codes = cs.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const queue = new Map(qs.docs.map((d) => [d.id, d.data()]));
+      codes = new Map(cs.docs.map((d) => [d.id, d.data()]));
+      users = us.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      const batch = writeBatch(db);
-      let ops = 0;
+      const ops = [];
+      const set = (ref, data, opt) => ops.push((b) => b.set(ref, data, opt ?? {}));
+      const del = (ref) => ops.push((b) => b.delete(ref));
+      qs.docs.forEach((d) => del(d.ref));
 
       // קוד מאסטר אחד בלבד
-      const masters = codes.filter((c) => c.master).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
-      master = masters[0] ?? null;
-      masters.slice(1).forEach((c) => { batch.delete(doc(db, 'codes', c.id)); ops++; });
+      const masters = [...codes].filter(([, c]) => c.kind === 'master' || c.master)
+        .sort(([, a], [, b]) => ms(b.createdAt) - ms(a.createdAt));
+      master = masters[0] ? { id: masters[0][0], ...masters[0][1] } : null;
+      if (master && master.kind !== 'master') set(doc(db, 'codes', master.id), { kind: 'master', createdAt: master.createdAt ?? serverTimestamp() });
+      masters.slice(1).forEach(([id]) => del(doc(db, 'codes', id)));
 
-      // קוד אישי אחד לכל קובץ (אם יש כמה, נשאר החדש ביותר)
-      codeOf = new Map();
-      for (const c of codes.filter((c) => !c.master).sort((a, b) => ms(b.createdAt) - ms(a.createdAt))) {
-        const fileExists = files.some((f) => f.id === c.fileId);
-        if (!fileExists || codeOf.has(c.fileId)) { batch.delete(doc(db, 'codes', c.id)); ops++; continue; }
-        codeOf.set(c.fileId, c);
+      // המנהל הוא גם משתמש
+      if (!users.some((u) => u.id === ADMIN_EMAIL)) {
+        set(doc(db, 'users', ADMIN_EMAIL), { name: auth.currentUser.displayName ?? '', approved: true, blocked: false, activeUntil: null, requestedAt: null });
       }
 
+      // לכל קובץ קוד אחד בדיוק, ולכל קובץ שדות של תור ובעלים
+      const byFile = new Map();
+      for (const [id, c] of codes) {
+        if (c.kind === 'master' || c.master || c.kind === 'personal') continue;
+        if (!c.fileId || !files.some((f) => f.id === c.fileId)) { del(doc(db, 'codes', id)); continue; }
+        if (!byFile.has(c.fileId)) byFile.set(c.fileId, []);
+        byFile.get(c.fileId).push([id, c]);
+      }
       for (const f of files) {
-        // לקובץ בלי קוד (ולא באמצע העלאה) נוצר קוד
-        if (!codeOf.has(f.id) && ms(f.createdAt) < fetchedAt - 60000) {
+        const fix = {};
+        if (!f.ownerEmail) fix.ownerEmail = ADMIN_EMAIL;
+        const mine = (byFile.get(f.id) ?? []).sort(([, a], [, b]) => ms(b.createdAt) - ms(a.createdAt));
+        let keep = mine.find(([id]) => id === f.code) ?? mine[0];
+        mine.filter((x) => x !== keep).forEach(([id]) => del(doc(db, 'codes', id)));
+        if (!keep && ms(f.createdAt) < fetchedAt - 60000) {
           const id = await freeRandomCode();
-          const c = { fileId: f.id, singleUse: true, ttlMinutes: 120, used: false, createdAt: serverTimestamp() };
-          batch.set(doc(db, 'codes', id), c);
-          batch.set(doc(db, 'queue', f.id), { code: id, ttlMinutes: 120, createdAt: serverTimestamp() });
-          codeOf.set(f.id, { id, ...c, createdAt: null });
-          ops += 2;
-          continue;
+          const c = { kind: 'file', fileId: f.id, ownerEmail: f.ownerEmail ?? ADMIN_EMAIL, singleUse: true, ttlMinutes: FILE_CODE_TTL, used: false, createdAt: serverTimestamp() };
+          set(doc(db, 'codes', id), c);
+          keep = [id, c];
         }
-        // התור תואם לקוד: קוד חד-פעמי שלא נוצל
-        const c = codeOf.get(f.id);
-        if (!c) continue;
-        const want = queueEntry(c.id, c);
-        const have = queue.get(f.id);
-        if (want && (!have || have.code !== want.code || have.ttlMinutes !== want.ttlMinutes || ms(have.createdAt) !== ms(want.createdAt))) {
-          batch.set(doc(db, 'queue', f.id), want); ops++;
-        } else if (!want && have) {
-          batch.delete(doc(db, 'queue', f.id)); ops++;
+        if (keep) {
+          const [id, c] = keep;
+          if (c.kind !== 'file' || !c.ownerEmail) set(doc(db, 'codes', id), { kind: 'file', ownerEmail: f.ownerEmail ?? ADMIN_EMAIL }, { merge: true });
+          if (f.code !== id) fix.code = id;
+          if (f.inQueue === undefined) fix.inQueue = !(c.singleUse && c.used);
+        } else if (f.inQueue === undefined) fix.inQueue = true;
+        if (Object.keys(fix).length) set(doc(db, 'files', f.id), fix, { merge: true });
+      }
+
+      // לכל משתמש מאושר קוד אישי
+      for (const u of users.filter((u) => u.approved)) {
+        const c = u.personalCode && codes.get(u.personalCode);
+        if (c?.kind === 'personal' && c.email === u.id) continue;
+        const id = await freeRandomCode();
+        set(doc(db, 'codes', id), { kind: 'personal', email: u.id, createdAt: serverTimestamp() });
+        set(doc(db, 'users', u.id), { personalCode: id }, { merge: true });
+      }
+
+      if (ops.length && depth < 2) {
+        for (let i = 0; i < ops.length; i += 400) {
+          const batch = writeBatch(db);
+          ops.slice(i, i + 400).forEach((op) => op(batch));
+          await batch.commit();
         }
-      }
-      for (const [fid, q] of queue) {
-        if (!files.some((f) => f.id === fid) && ms(q.createdAt) < fetchedAt) { batch.delete(doc(db, 'queue', fid)); ops++; }
-      }
-      if (ops && depth < 2) {
-        await batch.commit();
         return reload(depth + 1);
       }
       render();
     }
 
-    async function freeRandomCode() {
-      for (;;) {
-        const id = randomCode();
-        if (!(await getDoc(doc(db, 'codes', id))).exists()) return id;
-      }
-    }
-
-    // ---------- תצוגה ----------
-    function statusOf(f) {
-      const c = codeOf.get(f.id);
-      if (!c) return 'none';
-      const s = codeStatus(c);
-      if (s !== 'active') return s;
-      return c.singleUse ? 'queue' : 'multi';
-    }
-    const STATUS = {
-      queue: ['בתור', ''], multi: ['רב-פעמי', 'ok'], used: ['נוצל', 'mute'], expired: ['פג תוקף', 'err'], none: ['אין קוד', 'warn'],
-    };
-    const TABS = [['all', 'הכל'], ['queue', 'בתור'], ['multi', 'רב-פעמיים'], ['used', 'נוצלו'], ['expired', 'פגו']];
-
     function render() {
-      renderUsers();
-      // מאסטר
       $('masterCode').textContent = master ? master.id : 'אין';
       $('masterDel').classList.toggle('hidden', !master);
       $('masterEdit').textContent = master ? 'עריכה' : 'הגדרת קוד';
+      renderUsers();
+      renderFiles();
+    }
 
-      // לשוניות
-      const counts = { all: files.length };
-      files.forEach((f) => { const s = statusOf(f); counts[s] = (counts[s] ?? 0) + 1; });
-      $('tabs').innerHTML = TABS.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${l}<span class="n">${counts[k] ?? 0}</span></button>`).join('');
+    // ---------- ניווט ----------
+    function showView(v) {
+      $('nav').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.view === v));
+      $('filesSection').classList.toggle('hidden', v !== 'files');
+      $('usersSection').classList.toggle('hidden', v !== 'users');
+    }
+    $('nav').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-view]');
+      if (b) showView(b.dataset.view);
+    });
 
+    // ---------- משתמשים ----------
+    const PERIODS = [['10', '10 ימים'], ['30', '30 ימים'], ['90', '90 ימים'], ['365', 'שנה'], ['0', 'ללא הגבלה'], ['date', 'עד תאריך…']];
+    const periodOptions = (sel = '10') => PERIODS.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
+    $('newPeriod').innerHTML = periodOptions();
+    $('newPeriod').addEventListener('change', () => $('newDate').classList.toggle('hidden', $('newPeriod').value !== 'date'));
+
+    // מחזיר Timestamp של סוף התקופה, null ללא הגבלה, או undefined אם לא נבחר תאריך
+    function untilFrom(period, dateValue) {
+      if (period === '0') return null;
+      if (period === 'date') {
+        if (!dateValue) return undefined;
+        const [y, m, d] = dateValue.split('-').map(Number);
+        return Timestamp.fromDate(new Date(y, m - 1, d, 23, 59, 59));
+      }
+      return Timestamp.fromMillis(Date.now() + Number(period) * 86400000);
+    }
+
+    function userStatus(u) {
+      if (isAdminEmail(u.id)) return 'active';
+      if (u.blocked) return 'blocked';
+      if (!u.approved) return 'pending';
+      if (u.activeUntil && ms(u.activeUntil) < Date.now()) return 'expired';
+      return 'active';
+    }
+    const USTATUS = { pending: ['ממתין לאישור', 'warn'], active: ['פעיל', 'ok'], expired: ['פג תוקף', 'err'], blocked: ['חסום', 'err'] };
+    const UTABS = [['active', 'פעילים'], ['pending', 'ממתינים'], ['expired', 'פגו'], ['blocked', 'חסומים'], ['all', 'הכל']];
+
+    function renderUsers() {
+      const counts = { all: users.length };
+      users.forEach((u) => { const s = userStatus(u); counts[s] = (counts[s] ?? 0) + 1; });
+      $('pendingBadge').textContent = counts.pending ?? '';
+      $('pendingBadge').classList.toggle('hidden', !counts.pending);
+      $('userTabs').innerHTML = UTABS.map(([k, l]) => `<button data-utab="${k}" class="${userTab === k ? 'on' : ''}">${l}<span class="n">${counts[k] ?? 0}</span></button>`).join('');
+      const list = users.filter((u) => userTab === 'all' || userStatus(u) === userTab)
+        .sort((a, b) => (isAdminEmail(b.id) - isAdminEmail(a.id)) || ms(b.requestedAt ?? b.addedAt) - ms(a.requestedAt ?? a.addedAt));
+      $('users').innerHTML = list.length ? list.map(userCard).join('') : '<div class="empty">אין משתמשים כאן</div>';
+      $('ownerFilter').innerHTML = '<option value="">כל המשתמשים</option>'
+        + users.map((u) => `<option value="${esc(u.id)}" ${ownerFilter === u.id ? 'selected' : ''}>${esc(u.name || u.id)}${isAdminEmail(u.id) ? ' (מנהל)' : ''}</option>`).join('');
+    }
+
+    function userCard(u) {
+      const st = userStatus(u);
+      const [label, cls] = USTATUS[st];
+      const admin = isAdminEmail(u.id);
+      const queued = files.filter((f) => f.ownerEmail === u.id && f.inQueue).length;
+      let line = '';
+      if (admin) line = 'מנהל · תמיד פעיל';
+      else if (st === 'active') line = u.activeUntil ? 'פעיל עד ' + fmtDay(ms(u.activeUntil)) : 'פעיל ללא הגבלת זמן';
+      else if (st === 'expired') line = 'הגישה הסתיימה ב-' + fmtDay(ms(u.activeUntil));
+      else if (st === 'pending') line = u.requestedAt ? 'ביקש גישה ב-' + fmtTime(ms(u.requestedAt)) : 'עוד לא התחבר';
+      else line = 'חסום';
+      const id = esc(u.id);
+      const key = 'user:' + u.id;
+      const pcode = u.approved || admin
+        ? (editing === key
+          ? `<div class="codebox"><input type="text" data-codeinput="${esc(key)}" value="${esc(u.personalCode ?? '')}" maxlength="30">
+              <button class="btn sm" data-uact="savePcode" data-id="${id}">שמירה</button>
+              <button class="btn ghost sm" data-uact="cancelEdit" data-id="${id}">ביטול</button></div>`
+          : `<div class="codebox"><span class="muted tiny">קוד אישי</span><span class="code">${esc(u.personalCode ?? '—')}</span>
+              <button class="btn ghost icon" data-uact="copyPcode" data-id="${id}" title="העתקה" aria-label="העתקה">${ICON_COPY}</button>
+              <button class="btn ghost icon" data-uact="editPcode" data-id="${id}" title="עריכה" aria-label="עריכה">${ICON_EDIT}</button></div>`)
+        : '';
+      return `<div class="fcard">
+        <div class="top">
+          <div class="ficon" style="font-size:1rem">${esc((u.name || u.id)[0].toUpperCase())}</div>
+          <div style="flex:1;min-width:0">
+            <div class="fname" dir="ltr" style="text-align:right">${id}</div>
+            <div class="fmeta">${u.name ? esc(u.name) : ''}${admin ? ' (מנהל)' : ''}</div>
+          </div>
+          <span class="badge ${cls}">${label}</span>
+        </div>
+        <div class="fmeta">${line}</div>
+        ${pcode}
+        ${admin || st === 'blocked' ? '' : `<div class="opts">
+          <span>${st === 'active' ? 'הארכה:' : 'אישור ל:'}</span>
+          <select data-period="${id}">${periodOptions()}</select>
+          <input type="date" data-date="${id}" class="hidden">
+          <button class="btn sm" data-uact="approve" data-id="${id}">${st === 'active' ? 'עדכון' : 'אישור'}</button>
+        </div>`}
+        <div class="actions">
+          <button class="btn soft sm" data-uact="queue" data-id="${id}">התור (${queued})</button>
+          ${u.approved || admin ? `<button class="btn ghost sm" data-uact="newPcode" data-id="${id}">קוד אישי חדש</button>` : ''}
+          ${admin ? '' : st === 'blocked'
+            ? `<button class="btn ghost sm" data-uact="unblock" data-id="${id}">ביטול חסימה</button>`
+            : `<button class="btn ghost sm" data-uact="block" data-id="${id}">חסימה</button>`}
+          <div style="flex:1"></div>
+          ${admin ? '' : `<button class="btn danger icon" data-uact="delete" data-id="${id}" title="מחיקה" aria-label="מחיקה">${ICON_DEL}</button>`}
+        </div>
+      </div>`;
+    }
+
+    // מחליף את הקוד האישי של משתמש (לקוד שנבחר או לאקראי)
+    async function setPersonalCode(u, id) {
+      if (!CODE_RE.test(id)) { toast(CODE_HINT, true); return false; }
+      if (id !== u.personalCode && await codeTaken(id)) { toast('הקוד ' + id + ' כבר תפוס', true); return false; }
+      const batch = writeBatch(db);
+      if (u.personalCode && u.personalCode !== id) batch.delete(doc(db, 'codes', u.personalCode));
+      batch.set(doc(db, 'codes', id), { kind: 'personal', email: u.id, createdAt: serverTimestamp() });
+      batch.update(doc(db, 'users', u.id), { personalCode: id });
+      await batch.commit();
+      toast('הקוד האישי: ' + id);
+      return true;
+    }
+
+    $('userTabs').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-utab]');
+      if (b) { userTab = b.dataset.utab; renderUsers(); }
+    });
+    $('users').addEventListener('change', (e) => {
+      const sel = e.target.closest('select[data-period]');
+      if (sel) document.querySelector(`[data-date="${CSS.escape(sel.dataset.period)}"]`).classList.toggle('hidden', sel.value !== 'date');
+    });
+    $('users').addEventListener('keydown', (e) => {
+      const k = e.target.dataset?.codeinput;
+      if (k && e.key === 'Enter') userAct('savePcode', k.slice(5)).catch(fail);
+      if (k && e.key === 'Escape') { editing = null; render(); }
+    });
+    $('users').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-uact]');
+      if (b) userAct(b.dataset.uact, b.dataset.id).catch(fail);
+    });
+
+    async function userAct(name, email) {
+      const u = users.find((x) => x.id === email);
+      const ref = doc(db, 'users', email);
+      switch (name) {
+        case 'approve': {
+          const until = untilFrom(document.querySelector(`[data-period="${CSS.escape(email)}"]`).value,
+            document.querySelector(`[data-date="${CSS.escape(email)}"]`).value);
+          if (until === undefined) return toast('בחרו תאריך', true);
+          await updateDoc(ref, { approved: true, blocked: false, activeUntil: until });
+          toast(until ? 'פעיל עד ' + fmtDay(until.toMillis()) : 'פעיל ללא הגבלה');
+          break;
+        }
+        case 'block': await updateDoc(ref, { blocked: true }); toast('המשתמש נחסם'); break;
+        case 'unblock': await updateDoc(ref, { blocked: false }); toast('החסימה בוטלה'); break;
+        case 'delete': {
+          if (!confirm(`למחוק את ${email}? הקבצים שלו יישארו. אם יתחבר שוב הוא יופיע כממתין.`)) return;
+          const batch = writeBatch(db);
+          if (u.personalCode) batch.delete(doc(db, 'codes', u.personalCode));
+          batch.delete(ref);
+          await batch.commit();
+          toast('המשתמש נמחק');
+          break;
+        }
+        case 'queue':
+          ownerFilter = email;
+          fileTab = 'queue';
+          showView('files');
+          render();
+          return;
+        case 'copyPcode': await navigator.clipboard.writeText(u.personalCode); return toast('הקוד הועתק');
+        case 'editPcode':
+          editing = 'user:' + email;
+          render();
+          document.querySelector(`[data-codeinput="${CSS.escape(editing)}"]`)?.select();
+          return;
+        case 'cancelEdit': editing = null; return render();
+        case 'savePcode': {
+          const v = document.querySelector(`[data-codeinput="${CSS.escape('user:' + email)}"]`).value.trim();
+          if (!(await setPersonalCode(u, v))) return;
+          editing = null;
+          break;
+        }
+        case 'newPcode':
+          if (!confirm(`ליצור קוד אישי חדש ל-${email}? הקוד הנוכחי יפסיק לעבוד.`)) return;
+          await setPersonalCode(u, await freeRandomCode());
+          break;
+        default: return;
+      }
+      await reload();
+    }
+
+    $('addUser').addEventListener('click', async () => {
+      const email = $('newEmail').value.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast('כתובת מייל לא תקינה', true);
+      const until = untilFrom($('newPeriod').value, $('newDate').value);
+      if (until === undefined) return toast('בחרו תאריך', true);
+      try {
+        const existing = users.find((u) => u.id === email);
+        await setDoc(doc(db, 'users', email), {
+          name: existing?.name ?? '',
+          requestedAt: existing?.requestedAt ?? null,
+          addedAt: serverTimestamp(),
+          approved: true,
+          blocked: false,
+          activeUntil: until,
+        }, { merge: true });
+        $('newEmail').value = '';
+        toast(email + ' נוסף');
+        await reload();
+      } catch (err) {
+        fail(err);
+      }
+    });
+
+    // ---------- קבצים ----------
+    function fileState(f) {
+      if (!f.inQueue) return 'printed';
+      return codeStatus(codes.get(f.code)) === 'active' ? 'queue' : 'queueNoCode';
+    }
+    const FSTATUS = { queue: ['בתור', ''], queueNoCode: ['בתור · הקוד פג', 'warn'], printed: ['הודפס', 'mute'] };
+    const FTABS = [['queue', 'בתור'], ['printed', 'הודפסו'], ['all', 'הכל']];
+
+    function renderFiles() {
+      const mine = files.filter((f) => !ownerFilter || f.ownerEmail === ownerFilter);
+      const counts = { all: mine.length, queue: mine.filter((f) => f.inQueue).length, printed: mine.filter((f) => !f.inQueue).length };
+      $('tabs').innerHTML = FTABS.map(([k, l]) => `<button data-tab="${k}" class="${fileTab === k ? 'on' : ''}">${l}<span class="n">${counts[k]}</span></button>`).join('');
       const q = $('search').value.trim().toLowerCase();
-      const list = files.filter((f) => (tab === 'all' || statusOf(f) === tab)
-        && (!q || f.name.toLowerCase().includes(q) || (codeOf.get(f.id)?.id ?? '').toLowerCase().includes(q)));
-
-      $('files').innerHTML = list.length ? list.map(fileCard).join('') : `<div class="empty">${files.length ? 'אין קבצים כאן' : 'עוד אין קבצים. העלו קובץ או שלחו דרך /send'}</div>`;
+      const list = mine.filter((f) => (fileTab === 'all' || (fileTab === 'queue' ? f.inQueue : !f.inQueue))
+        && (!q || f.name.toLowerCase().includes(q) || (f.code ?? '').toLowerCase().includes(q)));
+      $('files').innerHTML = list.length ? list.map(fileCard).join('') : '<div class="empty">אין קבצים כאן</div>';
     }
 
     function fileCard(f) {
-      const c = codeOf.get(f.id);
-      const st = statusOf(f);
-      const [stLabel, stCls] = STATUS[st];
+      const c = codes.get(f.code);
+      const st = fileState(f);
+      const [stLabel, stCls] = FSTATUS[st];
+      const cs = codeStatus(c);
       const ext = f.name.split('.').pop().slice(0, 4).toUpperCase();
+      const owner = f.ownerEmail ?? '';
       let expiry = '';
-      if (c && c.ttlMinutes) {
-        const t = expiresAt(c);
-        expiry = st === 'expired' ? 'פג ב-' + fmtTime(t) : 'בתוקף עד ' + fmtTime(t);
-      } else if (c) expiry = 'לא פג אף פעם';
-      if (st === 'used' && c.usedAt) expiry = 'נוצל ב-' + fmtTime(ms(c.usedAt));
-
-      const codeBox = editingCode === f.id
-        ? `<div class="codebox"><input type="text" data-codeinput="${f.id}" value="${esc(c?.id ?? '')}" maxlength="30">
+      if (c) {
+        if (cs === 'used') expiry = 'הקוד נוצל' + (c.usedAt ? ' ב-' + fmtTime(ms(c.usedAt)) : '');
+        else if (!c.ttlMinutes) expiry = 'הקוד לא פג אף פעם';
+        else expiry = (cs === 'expired' ? 'הקוד פג ב-' : 'הקוד בתוקף עד ') + fmtTime(expiresAt(c));
+      }
+      if (!f.inQueue && f.printedAt) expiry = 'יצא מהתור ב-' + fmtTime(ms(f.printedAt));
+      const key = 'file:' + f.id;
+      const codeBox = editing === key
+        ? `<div class="codebox"><input type="text" data-codeinput="${esc(key)}" value="${esc(f.code ?? '')}" maxlength="30">
              <button class="btn sm" data-act="saveCode" data-id="${f.id}">שמירה</button>
-             <button class="btn ghost sm" data-act="cancelCode">ביטול</button></div>`
-        : `<div class="codebox"><span class="code">${esc(c?.id ?? '—')}</span>
-             <button class="btn ghost icon" data-act="copy" data-id="${f.id}" title="העתקה" aria-label="העתקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
-             <button class="btn ghost icon" data-act="editCode" data-id="${f.id}" title="עריכת הקוד" aria-label="עריכת הקוד"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></div>`;
+             <button class="btn ghost sm" data-act="cancelEdit" data-id="${f.id}">ביטול</button></div>`
+        : `<div class="codebox"><span class="code" style="${cs === 'active' ? '' : 'opacity:.4;text-decoration:line-through'}">${esc(f.code ?? '—')}</span>
+             <button class="btn ghost icon" data-act="copy" data-id="${f.id}" title="העתקה" aria-label="העתקה">${ICON_COPY}</button>
+             <button class="btn ghost icon" data-act="editCode" data-id="${f.id}" title="עריכת הקוד" aria-label="עריכת הקוד">${ICON_EDIT}</button></div>`;
 
       return `<div class="fcard">
         <div class="top">
           <div class="ficon">${esc(ext)}</div>
           <div style="flex:1;min-width:0">
             <div class="fname" dir="auto">${esc(f.name)}</div>
-            <div class="fmeta"><bdi>${formatSize(f.size)}</bdi> · <bdi>${f.createdAt ? fmtTime(ms(f.createdAt)) : ''}</bdi> · ${f.source === 'send' ? 'נשלח על ידי <bdi>' + esc(f.ownerEmail ?? 'אורח') + '</bdi>' : 'הועלה על ידי המנהל'}</div>
+            <div class="fmeta"><bdi>${esc(userName(owner) || owner)}</bdi>${isAdminEmail(owner) ? ' (מנהל)' : ''} · <bdi>${formatSize(f.size)}</bdi> · <bdi>${fmtTime(ms(f.createdAt))}</bdi></div>
           </div>
           <span class="badge ${stCls}">${stLabel}</span>
         </div>
@@ -304,96 +508,73 @@
         ${c ? `<div class="opts">
           <label class="switch"><input type="checkbox" data-act="single" data-id="${f.id}" ${c.singleUse ? 'checked' : ''}><span class="track"></span>חד-פעמי</label>
           <select data-act="ttl" data-id="${f.id}" aria-label="תוקף">${ttlOptions(c.ttlMinutes || 0)}</select>
-        </div>
-        <div class="fmeta">${expiry}</div>` : ''}
+        </div>` : ''}
+        <div class="fmeta">${expiry}</div>
         <div class="actions">
-          ${st === 'used' || st === 'expired' ? `<button class="btn soft sm" data-act="renew" data-id="${f.id}">חידוש הקוד</button>` : ''}
-          <button class="btn ghost sm" data-act="newCode" data-id="${f.id}">קוד אקראי חדש</button>
+          ${cs !== 'active' ? `<button class="btn soft sm" data-act="renew" data-id="${f.id}">חידוש הקוד</button>` : ''}
+          <button class="btn ghost sm" data-act="newCode" data-id="${f.id}">קוד אקראי</button>
+          ${f.inQueue
+            ? `<button class="btn ghost sm" data-act="dequeue" data-id="${f.id}">הוצאה מהתור</button>`
+            : `<button class="btn ghost sm" data-act="enqueue" data-id="${f.id}">החזרה לתור</button>`}
           <div style="flex:1"></div>
-          <button class="btn danger icon" data-act="delFile" data-id="${f.id}" title="מחיקה" aria-label="מחיקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
+          <button class="btn danger icon" data-act="delFile" data-id="${f.id}" title="מחיקה" aria-label="מחיקה">${ICON_DEL}</button>
         </div>
       </div>`;
     }
 
     $('tabs').addEventListener('click', (e) => {
       const b = e.target.closest('button[data-tab]');
-      if (b) { tab = b.dataset.tab; render(); }
+      if (b) { fileTab = b.dataset.tab; renderFiles(); }
     });
-    $('search').addEventListener('input', render);
+    $('search').addEventListener('input', renderFiles);
+    $('ownerFilter').addEventListener('change', () => { ownerFilter = $('ownerFilter').value; renderFiles(); });
 
-    // ---------- פעולות על קוד של קובץ ----------
-    // כותב את הקוד ומעדכן את התור באותה כתיבה
-    async function writeCode(fileId, codeId, data, oldId) {
+    // כותב את הקוד של קובץ (אולי בשם חדש) ומצמיד אותו לקובץ
+    async function writeCode(f, codeId, data) {
       const batch = writeBatch(db);
-      if (oldId && oldId !== codeId) batch.delete(doc(db, 'codes', oldId));
+      if (f.code && f.code !== codeId) batch.delete(doc(db, 'codes', f.code));
       batch.set(doc(db, 'codes', codeId), data);
-      const q = queueEntry(codeId, data);
-      if (q) batch.set(doc(db, 'queue', fileId), q);
-      else batch.delete(doc(db, 'queue', fileId));
+      if (f.code !== codeId) batch.update(doc(db, 'files', f.id), { code: codeId });
       await batch.commit();
     }
 
-    function codeData(c, changes) {
-      const { id, ...rest } = c;
-      return { ...rest, ...changes };
-    }
-
+    const baseCode = (f) => codes.get(f.code)
+      ?? { kind: 'file', fileId: f.id, ownerEmail: f.ownerEmail, singleUse: true, ttlMinutes: FILE_CODE_TTL, used: false, createdAt: serverTimestamp() };
     const FRESH = () => ({ used: false, usedBy: null, usedAt: null, createdAt: serverTimestamp() });
-
-    async function codeTaken(id) {
-      return (await getDoc(doc(db, 'codes', id))).exists();
-    }
 
     async function act(name, fid, el) {
       const f = files.find((x) => x.id === fid);
-      const c = codeOf.get(fid);
+      const c = f && baseCode(f);
       switch (name) {
-        case 'copy':
-          await navigator.clipboard.writeText(c.id);
-          return toast('הקוד הועתק');
+        case 'copy': await navigator.clipboard.writeText(f.code); return toast('הקוד הועתק');
         case 'editCode':
-          editingCode = fid;
+          editing = 'file:' + fid;
           render();
-          document.querySelector(`[data-codeinput="${fid}"]`)?.select();
+          document.querySelector(`[data-codeinput="${CSS.escape(editing)}"]`)?.select();
           return;
-        case 'cancelCode':
-          editingCode = null;
-          return render();
+        case 'cancelEdit': editing = null; return render();
         case 'saveCode': {
-          const id = document.querySelector(`[data-codeinput="${fid}"]`).value.trim();
-          if (!CODE_RE.test(id)) return toast('קוד: 3 עד 30 תווים, אותיות באנגלית, ספרות, - או _', true);
-          if (id !== c.id && await codeTaken(id)) return toast('הקוד ' + id + ' כבר תפוס', true);
-          await writeCode(fid, id, codeData(c, {}), c.id);
-          editingCode = null;
+          const id = document.querySelector(`[data-codeinput="${CSS.escape('file:' + fid)}"]`).value.trim();
+          if (!CODE_RE.test(id)) return toast(CODE_HINT, true);
+          if (id !== f.code && await codeTaken(id)) return toast('הקוד ' + id + ' כבר תפוס', true);
+          await writeCode(f, id, c);
+          editing = null;
           toast('הקוד עודכן ל-' + id);
           break;
         }
-        case 'newCode': {
-          const id = await freeRandomCode();
-          await writeCode(fid, id, codeData(c, FRESH()), c.id);
-          toast('קוד חדש: ' + id);
-          break;
-        }
-        case 'renew':
-          await writeCode(fid, c.id, codeData(c, FRESH()), c.id);
-          toast('הקוד חודש');
-          break;
-        case 'single':
-          await writeCode(fid, c.id, codeData(c, { singleUse: el.checked }), c.id);
-          toast(el.checked ? 'הקוד חד-פעמי' : 'הקוד רב-פעמי');
-          break;
-        case 'ttl':
-          // התוקף נספר מרגע יצירת הקוד (ההעלאה), לא מרגע השינוי
-          await writeCode(fid, c.id, codeData(c, { ttlMinutes: Number(el.value) }), c.id);
-          toast('התוקף עודכן');
-          break;
+        case 'newCode': await writeCode(f, await freeRandomCode(), { ...c, ...FRESH() }); toast('נוצר קוד חדש'); break;
+        case 'renew': await writeCode(f, f.code, { ...c, ...FRESH() }); toast('הקוד חודש'); break;
+        case 'single': await writeCode(f, f.code, { ...c, singleUse: el.checked }); toast(el.checked ? 'הקוד חד-פעמי' : 'הקוד רב-פעמי'); break;
+        // התוקף נספר מרגע יצירת הקוד (ההעלאה), לא מרגע השינוי
+        case 'ttl': await writeCode(f, f.code, { ...c, ttlMinutes: Number(el.value) }); toast('התוקף עודכן'); break;
+        case 'dequeue': await updateDoc(doc(db, 'files', fid), { inQueue: false, printedAt: serverTimestamp() }); toast('הוצא מהתור'); break;
+        case 'enqueue': await updateDoc(doc(db, 'files', fid), { inQueue: true, printedAt: null, printedBy: null }); toast('הוחזר לתור'); break;
         case 'delFile':
           if (!confirm(`למחוק את "${f.name}" ואת הקוד שלו?`)) return;
           await deleteFiles([f]);
           toast('הקובץ נמחק');
           break;
-        default:
-          return;
+        default: return;
       }
       await reload();
     }
@@ -407,17 +588,17 @@
       if (el && (el.dataset.act === 'single' || el.dataset.act === 'ttl')) act(el.dataset.act, el.dataset.id, el).catch(fail);
     });
     $('files').addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && e.target.dataset.codeinput) act('saveCode', e.target.dataset.codeinput).catch(fail);
-      if (e.key === 'Escape' && e.target.dataset.codeinput) act('cancelCode').catch(fail);
+      const k = e.target.dataset?.codeinput;
+      if (k && e.key === 'Enter') act('saveCode', k.slice(5)).catch(fail);
+      if (k && e.key === 'Escape') act('cancelEdit').catch(fail);
     });
 
     async function deleteFiles(list) {
       const refs = [];
       for (const f of list) {
         for (let i = 0; i < (f.chunks ?? 0); i++) refs.push(doc(db, 'files', f.id, 'chunks', String(i)));
-        refs.push(doc(db, 'files', f.id), doc(db, 'queue', f.id));
-        const c = codeOf.get(f.id);
-        if (c) refs.push(doc(db, 'codes', c.id));
+        refs.push(doc(db, 'files', f.id));
+        if (f.code) refs.push(doc(db, 'codes', f.code));
       }
       // batch מוגבל ל-500 פעולות
       for (let i = 0; i < refs.length; i += 400) {
@@ -434,11 +615,11 @@
       if (open) { $('masterInput').value = master?.id ?? ''; $('masterInput').focus(); }
     }
     async function setMaster(id) {
-      if (!CODE_RE.test(id)) return toast('קוד: 3 עד 30 תווים, אותיות באנגלית, ספרות, - או _', true);
+      if (!CODE_RE.test(id)) return toast(CODE_HINT, true);
       if (id !== master?.id && await codeTaken(id)) return toast('הקוד ' + id + ' כבר תפוס', true);
       const batch = writeBatch(db);
       if (master && master.id !== id) batch.delete(doc(db, 'codes', master.id));
-      batch.set(doc(db, 'codes', id), { master: true, createdAt: serverTimestamp() });
+      batch.set(doc(db, 'codes', id), { kind: 'master', createdAt: serverTimestamp() });
       await batch.commit();
       masterForm(false);
       toast('קוד המאסטר: ' + id);
@@ -451,185 +632,9 @@
     $('masterRandom').addEventListener('click', async () => setMaster(await freeRandomCode()).catch(fail));
     $('masterDel').addEventListener('click', async () => {
       if (!confirm('למחוק את קוד המאסטר?')) return;
-      const batch = writeBatch(db);
-      batch.delete(doc(db, 'codes', master.id));
-      await batch.commit().catch(fail);
-      toast('קוד המאסטר נמחק');
-      await reload().catch(fail);
-    });
-
-    // ---------- העלאה ----------
-    const fileInput = $('fileInput'), drop = $('drop');
-    fileInput.accept = ACCEPT;
-
-    async function uploadMany(list) {
-      const arr = [...list];
-      if (!arr.length) return;
-      const bar = $('progress');
-      bar.classList.remove('hidden');
-      const singleUse = $('defSingle').checked;
-      const ttlMinutes = Number($('defTtl').value);
-      let done = 0;
       try {
-        for (let i = 0; i < arr.length; i++) {
-          if (!isPrintable(arr[i])) { toast(`דילגתי על ${arr[i].name} (סוג לא נתמך)`, true); continue; }
-          const fid = await uploadFile(arr[i], 'admin', (p) => { bar.firstElementChild.style.width = ((i + p) / arr.length * 100) + '%'; });
-          const id = await freeRandomCode();
-          await writeCode(fid, id, { fileId: fid, singleUse, ttlMinutes, used: false, createdAt: serverTimestamp() });
-          done++;
-        }
-        if (done) toast(done === 1 ? 'הקובץ הועלה' : `${done} קבצים הועלו`);
-      } catch (err) {
-        fail(err);
-      }
-      bar.classList.add('hidden');
-      bar.firstElementChild.style.width = '0';
-      fileInput.value = '';
-      await reload().catch(fail);
-    }
-
-    fileInput.addEventListener('change', () => uploadMany(fileInput.files));
-    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
-    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
-    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); uploadMany(e.dataTransfer.files); });
-
-    // ---------- ניווט ----------
-    $('nav').addEventListener('click', (e) => {
-      const b = e.target.closest('button[data-view]');
-      if (!b) return;
-      $('nav').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
-      $('filesSection').classList.toggle('hidden', b.dataset.view !== 'files');
-      $('usersSection').classList.toggle('hidden', b.dataset.view !== 'users');
-    });
-
-    // ---------- משתמשים ----------
-    const PERIODS = [['10', '10 ימים'], ['30', '30 ימים'], ['90', '90 ימים'], ['365', 'שנה'], ['0', 'ללא הגבלה'], ['date', 'עד תאריך…']];
-    const periodOptions = (sel = '10') => PERIODS.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
-    $('newPeriod').innerHTML = periodOptions();
-    $('newPeriod').addEventListener('change', () => $('newDate').classList.toggle('hidden', $('newPeriod').value !== 'date'));
-    const fmtDay = (t) => new Date(t).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
-
-    // מחזיר Timestamp של סוף התקופה, null ללא הגבלה, או undefined אם לא נבחר תאריך
-    function untilFrom(period, dateValue) {
-      if (period === '0') return null;
-      if (period === 'date') {
-        if (!dateValue) return undefined;
-        const [y, m, d] = dateValue.split('-').map(Number);
-        return Timestamp.fromDate(new Date(y, m - 1, d, 23, 59, 59));
-      }
-      return Timestamp.fromMillis(Date.now() + Number(period) * 86400000);
-    }
-
-    function userStatus(u) {
-      if (u.blocked) return 'blocked';
-      if (!u.approved) return 'pending';
-      if (u.activeUntil && ms(u.activeUntil) < Date.now()) return 'expired';
-      return 'active';
-    }
-    const USTATUS = { pending: ['ממתין לאישור', 'warn'], active: ['פעיל', 'ok'], expired: ['פג תוקף', 'err'], blocked: ['חסום', 'err'] };
-    const UTABS = [['pending', 'ממתינים'], ['active', 'פעילים'], ['expired', 'פגו'], ['blocked', 'חסומים'], ['all', 'הכל']];
-
-    function renderUsers() {
-      const counts = { all: users.length };
-      users.forEach((u) => { const s = userStatus(u); counts[s] = (counts[s] ?? 0) + 1; });
-      $('pendingBadge').textContent = counts.pending ?? '';
-      $('pendingBadge').classList.toggle('hidden', !counts.pending);
-      $('userTabs').innerHTML = UTABS.map(([k, l]) => `<button data-utab="${k}" class="${userTab === k ? 'on' : ''}">${l}<span class="n">${counts[k] ?? 0}</span></button>`).join('');
-      const list = users.filter((u) => userTab === 'all' || userStatus(u) === userTab)
-        .sort((a, b) => ms(b.requestedAt ?? b.addedAt) - ms(a.requestedAt ?? a.addedAt));
-      $('users').innerHTML = list.length ? list.map(userCard).join('') : '<div class="empty">אין משתמשים כאן</div>';
-    }
-
-    function userCard(u) {
-      const st = userStatus(u);
-      const [label, cls] = USTATUS[st];
-      const sent = files.filter((f) => f.ownerEmail === u.id).length;
-      let line = '';
-      if (st === 'active') line = u.activeUntil ? 'פעיל עד ' + fmtDay(ms(u.activeUntil)) : 'פעיל ללא הגבלת זמן';
-      if (st === 'expired') line = 'הגישה הסתיימה ב-' + fmtDay(ms(u.activeUntil));
-      if (st === 'pending') line = u.requestedAt ? 'ביקש גישה ב-' + fmtTime(ms(u.requestedAt)) : 'עוד לא התחבר';
-      if (st === 'blocked') line = 'חסום';
-      const id = esc(u.id);
-      return `<div class="fcard">
-        <div class="top">
-          <div class="ficon" style="font-size:1rem">${esc((u.name || u.id)[0].toUpperCase())}</div>
-          <div style="flex:1;min-width:0">
-            <div class="fname" dir="ltr" style="text-align:right">${id}</div>
-            <div class="fmeta">${u.name ? esc(u.name) + ' · ' : ''}${sent} קבצים נשלחו</div>
-          </div>
-          <span class="badge ${cls}">${label}</span>
-        </div>
-        <div class="fmeta">${line}</div>
-        ${st === 'blocked' ? '' : `<div class="opts">
-          <span>${st === 'active' ? 'הארכה:' : 'אישור ל:'}</span>
-          <select data-period="${id}">${periodOptions()}</select>
-          <input type="date" data-date="${id}" class="hidden">
-          <button class="btn sm" data-uact="approve" data-id="${id}">${st === 'active' ? 'עדכון' : 'אישור'}</button>
-        </div>`}
-        <div class="actions">
-          ${st === 'blocked'
-            ? `<button class="btn soft sm" data-uact="unblock" data-id="${id}">ביטול חסימה</button>`
-            : `<button class="btn ghost sm" data-uact="block" data-id="${id}">חסימה</button>`}
-          <div style="flex:1"></div>
-          <button class="btn danger icon" data-uact="delete" data-id="${id}" title="מחיקה" aria-label="מחיקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
-        </div>
-      </div>`;
-    }
-
-    $('userTabs').addEventListener('click', (e) => {
-      const b = e.target.closest('button[data-utab]');
-      if (b) { userTab = b.dataset.utab; renderUsers(); }
-    });
-    $('users').addEventListener('change', (e) => {
-      const sel = e.target.closest('select[data-period]');
-      if (sel) document.querySelector(`[data-date="${CSS.escape(sel.dataset.period)}"]`).classList.toggle('hidden', sel.value !== 'date');
-    });
-    $('users').addEventListener('click', async (e) => {
-      const b = e.target.closest('button[data-uact]');
-      if (!b) return;
-      const email = b.dataset.id;
-      const ref = doc(db, 'users', email);
-      try {
-        if (b.dataset.uact === 'approve') {
-          const until = untilFrom(document.querySelector(`[data-period="${CSS.escape(email)}"]`).value,
-            document.querySelector(`[data-date="${CSS.escape(email)}"]`).value);
-          if (until === undefined) return toast('בחרו תאריך', true);
-          await updateDoc(ref, { approved: true, blocked: false, activeUntil: until });
-          toast(until ? 'פעיל עד ' + fmtDay(until.toMillis()) : 'פעיל ללא הגבלה');
-        } else if (b.dataset.uact === 'block') {
-          await updateDoc(ref, { blocked: true });
-          toast('המשתמש נחסם');
-        } else if (b.dataset.uact === 'unblock') {
-          await updateDoc(ref, { blocked: false });
-          toast('החסימה בוטלה');
-        } else if (b.dataset.uact === 'delete') {
-          if (!confirm(`למחוק את ${email}? אם יתחבר שוב הוא יופיע כממתין.`)) return;
-          await deleteDoc(ref);
-          toast('המשתמש נמחק');
-        }
-        await reload();
-      } catch (err) {
-        fail(err);
-      }
-    });
-
-    $('addUser').addEventListener('click', async () => {
-      const email = $('newEmail').value.trim().toLowerCase();
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast('כתובת מייל לא תקינה', true);
-      const until = untilFrom($('newPeriod').value, $('newDate').value);
-      if (until === undefined) return toast('בחרו תאריך', true);
-      try {
-        const existing = users.find((u) => u.id === email);
-        await setDoc(doc(db, 'users', email), {
-          name: existing?.name ?? '',
-          requestedAt: existing?.requestedAt ?? null,
-          addedAt: serverTimestamp(),
-          approved: true,
-          blocked: false,
-          activeUntil: until,
-        });
-        $('newEmail').value = '';
-        toast(email + ' נוסף');
+        await deleteDoc(doc(db, 'codes', master.id));
+        toast('קוד המאסטר נמחק');
         await reload();
       } catch (err) {
         fail(err);
@@ -638,19 +643,19 @@
 
     // ---------- ניקוי ----------
     $('cleanup').addEventListener('click', async () => {
-      const dead = files.filter((f) => f.source === 'send' && ['used', 'expired'].includes(statusOf(f)));
+      const printed = files.filter((f) => !f.inQueue);
       try {
         // הרשאות הורדה ישנות
         const [acc, cl] = await Promise.all([getDocs(collection(db, 'access')), getDocs(collection(db, 'claims'))]);
-        const old = [...acc.docs, ...cl.docs].filter((d) => ms(d.data().at) < Date.now() - 15 * 60000).map((d) => d.ref);
-        if (!dead.length && !old.length) return toast('אין מה לנקות');
-        if (dead.length && !confirm(`יימחקו ${dead.length} קבצים שנשלחו מ-/send והקוד שלהם נוצל או פג. להמשיך?`)) return;
+        const old = [...acc.docs, ...cl.docs].filter((d) => ms(d.data().at) < Date.now() - 40 * 60000).map((d) => d.ref);
+        if (!printed.length && !old.length) return toast('אין מה לנקות');
+        if (printed.length && !confirm(`יימחקו ${printed.length} קבצים שכבר הודפסו. להמשיך?`)) return;
         for (let i = 0; i < old.length; i += 400) {
           const batch = writeBatch(db);
           old.slice(i, i + 400).forEach((r) => batch.delete(r));
           await batch.commit();
         }
-        await deleteFiles(dead);
+        await deleteFiles(printed);
         toast('הניקוי הסתיים');
         await reload();
       } catch (err) {

@@ -1,9 +1,9 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import {
-  getFirestore, doc, collection, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, Bytes,
+  getFirestore, doc, collection, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, Bytes, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js?v=5';
+import { firebaseConfig } from './firebase-config.js?v=6';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -13,6 +13,7 @@ export const ADMIN_EMAIL = 'rb077858@gmail.com';
 export const CHUNK_SIZE = 750 * 1024; // מסמך ב-Firestore מוגבל ל-1MB
 export const MAX_SIZE = 15 * 1024 * 1024;
 export const ACCEPT = '.pdf,application/pdf,image/*,.txt,text/plain';
+export const FILE_CODE_TTL = 120; // דקות
 
 export async function ensureUser() {
   await auth.authStateReady();
@@ -23,6 +24,14 @@ export async function ensureUser() {
 export function randomCode() {
   const n = crypto.getRandomValues(new Uint32Array(1))[0] % 1000000;
   return String(n).padStart(6, '0');
+}
+
+// קוד אקראי של 6 ספרות שעוד לא תפוס
+export async function freeRandomCode() {
+  for (;;) {
+    const id = randomCode();
+    if (!(await getDoc(doc(db, 'codes', id))).exists()) return id;
+  }
 }
 
 export function formatSize(bytes) {
@@ -37,10 +46,53 @@ export function isPrintable(file) {
   return t === 'application/pdf' || n.endsWith('.pdf') || t.startsWith('image/') || t === 'text/plain' || n.endsWith('.txt');
 }
 
-// שומר קובץ ב-Firestore כרצף של חתיכות (chunks)
-export async function uploadFile(file, source, onProgress) {
+export const ms = (ts) => ts?.toMillis?.() ?? 0;
+
+// ---------- משתמשים ----------
+
+// מצב ההרשאה של משתמש מחובר: 'login' | 'pending' | 'blocked' | 'expired' | 'ok'
+export async function senderState(user) {
+  if (!user || user.isAnonymous) return { state: 'login' };
+  const ref = doc(db, 'users', user.email);
+  let snap = await getDoc(ref);
+  if (!snap.exists()) {
+    // המנהל הוא גם משתמש רגיל עם תור משלו
+    const admin = user.email === ADMIN_EMAIL;
+    await setDoc(ref, { name: user.displayName ?? '', requestedAt: serverTimestamp(), approved: admin, blocked: false, activeUntil: null });
+    snap = await getDoc(ref);
+  }
+  const u = snap.data();
+  if (user.email === ADMIN_EMAIL) return { state: 'ok', u };
+  if (u.blocked) return { state: 'blocked', u };
+  if (!u.approved) return { state: 'pending', u };
+  if (u.activeUntil && ms(u.activeUntil) < Date.now()) return { state: 'expired', u };
+  return { state: 'ok', u };
+}
+
+// מחליף (או יוצר) את הקוד האישי של המשתמש המחובר
+export async function resetPersonalCode(oldCode) {
+  const user = auth.currentUser;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const code = await freeRandomCode();
+    const batch = writeBatch(db);
+    if (oldCode) batch.delete(doc(db, 'codes', oldCode));
+    batch.set(doc(db, 'codes', code), { kind: 'personal', email: user.email, createdAt: serverTimestamp() });
+    batch.update(doc(db, 'users', user.email), { personalCode: code });
+    try {
+      await batch.commit();
+      return code;
+    } catch (err) {
+      if (err.code !== 'permission-denied' || attempt === 7) throw err;
+    }
+  }
+}
+
+// ---------- קבצים ----------
+
+// שומר קובץ בתור של המשתמש (תוכן בחתיכות) ויוצר לו קוד חד-פעמי לשעתיים
+export async function uploadToQueue(file, onProgress) {
   if (file.size > MAX_SIZE) throw new Error('הקובץ גדול מדי (מקסימום ' + formatSize(MAX_SIZE) + ')');
-  const user = await ensureUser();
+  const user = auth.currentUser;
   const ref = doc(collection(db, 'files'));
   const chunks = Math.max(1, Math.ceil(file.size / CHUNK_SIZE));
   await setDoc(ref, {
@@ -49,9 +101,11 @@ export async function uploadFile(file, source, onProgress) {
     size: file.size,
     chunks,
     owner: user.uid,
-    ownerEmail: user.email ?? null,
+    ownerEmail: user.email,
     createdAt: serverTimestamp(),
-    source,
+    source: 'user',
+    inQueue: true,
+    code: null,
   });
   const buf = new Uint8Array(await file.arrayBuffer());
   for (let i = 0; i < chunks; i++) {
@@ -59,13 +113,38 @@ export async function uploadFile(file, source, onProgress) {
     await setDoc(doc(db, 'files', ref.id, 'chunks', String(i)), { d: Bytes.fromUint8Array(part) });
     onProgress?.((i + 1) / chunks);
   }
-  return ref.id;
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const code = randomCode();
+    const batch = writeBatch(db);
+    // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר
+    batch.set(doc(db, 'codes', code), {
+      kind: 'file',
+      fileId: ref.id,
+      ownerEmail: user.email,
+      singleUse: true,
+      ttlMinutes: FILE_CODE_TTL,
+      used: false,
+      createdAt: serverTimestamp(),
+      createdBy: user.uid,
+    });
+    batch.update(ref, { code });
+    try {
+      await batch.commit();
+      return { id: ref.id, code };
+    } catch (err) {
+      if (err.code !== 'permission-denied') throw err;
+    }
+  }
+  throw new Error('לא הצלחנו ליצור קוד, נסו שוב');
 }
 
-export async function downloadFile(fileId) {
-  const meta = await getDoc(doc(db, 'files', fileId));
-  if (!meta.exists()) throw new Error('הקובץ לא נמצא');
-  const m = meta.data();
+export async function downloadFile(fileId, meta) {
+  let m = meta;
+  if (!m) {
+    const snap = await getDoc(doc(db, 'files', fileId));
+    if (!snap.exists()) throw new Error('הקובץ לא נמצא');
+    m = snap.data();
+  }
   const parts = await Promise.all(
     Array.from({ length: m.chunks }, (_, i) => getDoc(doc(db, 'files', fileId, 'chunks', String(i)))),
   );
@@ -73,10 +152,12 @@ export async function downloadFile(fileId) {
   return { id: fileId, name: m.name, type: m.type, blob };
 }
 
-// סטטוס של קוד קובץ: 'active' | 'used' | 'expired' | 'missing'
+// ---------- קודים ----------
+
+// סטטוס של קוד: 'active' | 'used' | 'expired' | 'missing'
 export function codeStatus(c) {
   if (!c) return 'missing';
-  if (c.master) return 'active';
+  if (c.kind === 'master' || c.kind === 'personal') return 'active';
   if (c.singleUse && c.used) return 'used';
   if (c.ttlMinutes > 0 && Date.now() > expiresAt(c)) return 'expired';
   return 'active';
@@ -96,43 +177,61 @@ export async function fetchCode(code) {
   return snap.exists() ? snap.data() : null;
 }
 
-// מממש קוד של קובץ: מסמן אותו כמשומש (אם הוא חד-פעמי), מוציא את הקובץ מהתור
-// ומקבל הרשאה להוריד אותו ל-10 דקות. הכול בכתיבה אטומית אחת.
+// מימוש קוד של קובץ: מסמן אותו כמשומש, מוציא את הקובץ מהתור ומקבל הרשאה להוריד אותו
 export async function redeemFileCode(code, c) {
   const user = await ensureUser();
   const batch = writeBatch(db);
   if (c.singleUse) {
     batch.update(doc(db, 'codes', code), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
-    batch.delete(doc(db, 'queue', c.fileId));
+    batch.update(doc(db, 'files', c.fileId), { inQueue: false, printedAt: serverTimestamp(), printedBy: user.uid });
   }
   batch.set(doc(db, 'access', c.fileId + '_' + user.uid), { fileId: c.fileId, code, at: serverTimestamp() });
   await batch.commit();
 }
 
-// מוכיח שהמשתמש הזין את קוד המאסטר, ואז מחזיר את התור (לפי סדר ההעלאה)
-export async function openQueue(masterCode) {
+// הוכחה שהוזן קוד אישי (email) או קוד מאסטר ('*'), ל-30 דקות
+export async function claim(code, email) {
   const user = await ensureUser();
-  await setDoc(doc(db, 'claims', user.uid), { code: masterCode, at: serverTimestamp() });
-  const snap = await getDocs(collection(db, 'queue'));
-  return snap.docs
-    .map((d) => ({ fileId: d.id, ...d.data() }))
-    .filter((q) => !q.ttlMinutes || Date.now() < expiresAt(q))
-    .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+  await setDoc(doc(db, 'claims', user.uid), { code, email, at: serverTimestamp() });
 }
 
-// קוד המאסטר מנצל את הקוד של כל קובץ שבתור. מחזיר את הקבצים שנוצלו בהצלחה
-// (קובץ שמישהו אחר הספיק לנצל בינתיים פשוט מדולג).
-export async function consumeQueue(entries) {
-  const taken = [];
-  for (const q of entries) {
+// הקבצים שבתור (של משתמש אחד, או של כולם), כל אחד עם מצב הקוד שלו, לפי סדר ההעלאה
+export async function fetchQueue(email) {
+  const q = email
+    ? query(collection(db, 'files'), where('ownerEmail', '==', email), where('inQueue', '==', true))
+    : query(collection(db, 'files'), where('inQueue', '==', true));
+  const snap = await getDocs(q);
+  const files = snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
+  await Promise.all(files.map(async (f) => {
+    const c = f.code ? (await getDoc(doc(db, 'codes', f.code))).data() : null;
+    f.codeData = c ?? null;
+    f.codeActive = codeStatus(c) === 'active' && c?.kind === 'file';
+  }));
+  return files;
+}
+
+// מוציא קובץ מהתור (ומנצל את הקוד שלו אם הוא עוד בתוקף). מחזיר false אם מישהו הקדים.
+export async function markPrinted(f) {
+  const user = await ensureUser();
+  const batch = writeBatch(db);
+  if (f.codeActive && f.codeData.singleUse) {
+    batch.update(doc(db, 'codes', f.code), { used: true, usedBy: user.uid, usedAt: serverTimestamp() });
+  }
+  batch.update(doc(db, 'files', f.id), { inQueue: false, printedAt: serverTimestamp(), printedBy: user.uid });
+  try {
+    await batch.commit();
+    return true;
+  } catch (err) {
+    // אולי הקוד פג בדיוק עכשיו: מנסים להוציא מהתור בלי לנצל אותו
+    if (!f.codeActive) { console.warn('skipped', f.id, err); return false; }
     try {
-      await redeemFileCode(q.code, { fileId: q.fileId, singleUse: true });
-      taken.push(q.fileId);
-    } catch (err) {
-      console.warn('skipped', q.fileId, err);
+      await setDoc(doc(db, 'files', f.id), { inQueue: false, printedAt: serverTimestamp(), printedBy: user.uid }, { merge: true });
+      return true;
+    } catch (err2) {
+      console.warn('skipped', f.id, err2);
+      return false;
     }
   }
-  return taken;
 }
 
 // ---------- הדפסה ----------
@@ -167,26 +266,30 @@ async function pdfToImages(blob) {
 
 // מכין מסמך הדפסה ב-iframe נסתר ופותח את חלונית ההדפסה של כרום.
 // מחזיר Promise שמתממש כשהחלונית נסגרה.
-export async function printFile({ name, type, blob }) {
+// header: שורה קטנה בראש כל עמוד (למשל שם ומייל של בעל הקובץ)
+export async function printFile({ name, type, blob, header }) {
   const lower = name.toLowerCase();
+  const hdr = header ? `<div class="hdr">${escapeHtml(header)}</div>` : '';
   const urls = [];
   let body;
   if (type === 'application/pdf' || lower.endsWith('.pdf')) {
     urls.push(...(await pdfToImages(blob)));
-    body = urls.map((u) => `<div class="pg"><img src="${u}"></div>`).join('');
+    body = urls.map((u) => `<div class="pg">${hdr}<div class="im"><img src="${u}"></div></div>`).join('');
   } else if (type?.startsWith('image/')) {
     urls.push(URL.createObjectURL(blob));
-    body = `<div class="pg"><img src="${urls[0]}"></div>`;
+    body = `<div class="pg">${hdr}<div class="im"><img src="${urls[0]}"></div></div>`;
   } else {
-    body = `<pre>${escapeHtml(await blob.text())}</pre>`;
+    body = `${hdr}<pre>${escapeHtml(await blob.text())}</pre>`;
   }
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(name)}</title><style>
     @page { margin: 0; }
     html, body { margin: 0; padding: 0; }
-    .pg { width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center; break-after: page; overflow: hidden; }
+    .pg { width: 100%; height: 100vh; display: flex; flex-direction: column; break-after: page; overflow: hidden; }
     .pg:last-child { break-after: auto; }
-    .pg img { width: 100%; height: 100%; object-fit: contain; }
+    .im { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+    .im img { width: 100%; height: 100%; object-fit: contain; }
+    .hdr { flex: none; font: 8.5pt/1 Arial, sans-serif; color: #444; text-align: center; padding: 2.5mm 0 1.5mm; direction: rtl; unicode-bidi: plaintext; }
     pre { white-space: pre-wrap; font: 12pt/1.4 monospace; margin: 15mm; }
   </style></head><body>${body}</body></html>`;
 

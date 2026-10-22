@@ -5,138 +5,236 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3b5bfd">
   <title>הדפסה עם קוד</title>
-  <link rel="stylesheet" href="./assets/style.css?v=4">
+  <link rel="stylesheet" href="./assets/style.css?v=6">
 </head>
 <body>
-  <div class="shell center">
+  <div class="shell center" id="shell">
     <div class="brand">
       <div class="brand-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
       </div>
       <div>
         <h1>הדפסה עם קוד</h1>
-        <p>הזינו את הקוד והקובץ יישלח להדפסה</p>
+        <p>קוד של קובץ, קוד אישי או קוד מאסטר</p>
       </div>
     </div>
 
-    <div class="card">
+    <!-- הזנת קוד -->
+    <div class="card" id="codeCard">
       <form id="form" autocomplete="off">
         <input id="code" class="code-input" type="text" inputmode="numeric" maxlength="30" placeholder="••••••" autofocus required aria-label="קוד">
         <button id="go" class="btn grad block" type="submit" style="margin-top:14px">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><rect x="6" y="14" width="12" height="8" rx="1"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/></svg>
-          <span>הדפס</span>
+          <span>המשך</span>
         </button>
       </form>
-
-      <div id="queueBox" class="hidden">
-        <div class="notice">
-          <div class="big" id="queueCount">0</div>
-          <div><strong>קבצים ממתינים בתור</strong><div class="muted" style="font-size:.9rem">הקודים שלהם ינוצלו בהדפסה</div></div>
-        </div>
-        <div class="stack">
-          <button id="printAll" class="btn grad block">הדפסת כל התור</button>
-          <button id="cancel" class="btn ghost block">ביטול</button>
-        </div>
-      </div>
-
       <div id="msg" class="msg"></div>
     </div>
 
-    <div class="footer-link"><a href="./send/">רוצים להדפיס משהו? העלו קובץ וקבלו קוד ←</a></div>
+    <!-- תור אישי / מאסטר -->
+    <div class="card hidden" id="listCard">
+      <div class="list-head">
+        <div style="min-width:0">
+          <h2 id="listTitle" style="margin:0"></h2>
+          <div class="muted" id="listSub" style="font-size:.9rem"></div>
+        </div>
+        <button class="btn ghost sm" id="close">סגירה</button>
+      </div>
+      <div id="list" class="qlist"></div>
+      <div class="stack" id="listActions"></div>
+      <div id="listMsg" class="msg"></div>
+    </div>
+
+    <div class="footer-link"><a href="./dash/">התור שלי: העלאת קבצים וקבלת קודים ←</a></div>
   </div>
 
   <script type="module">
-    import { fetchCode, codeProblem, redeemFileCode, openQueue, consumeQueue, downloadFile, printSequentially } from './assets/common.js?v=4';
+    import {
+      fetchCode, codeProblem, redeemFileCode, claim, fetchQueue, markPrinted, downloadFile, printSequentially, db,
+    } from './assets/common.js?v=6';
+    import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
-    const form = $('form'), input = $('code'), go = $('go'), msg = $('msg');
-    let master = null; // קוד המאסטר שהוזן, ממתין ללחיצה על "הדפסת כל התור"
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    const form = $('form'), input = $('code'), go = $('go');
 
-    function show(text, kind = '') {
-      msg.textContent = text;
-      msg.className = 'msg ' + kind;
-    }
+    // מצב הרשימה הפתוחה: { kind: 'personal' | 'master', code, email, files, users, open, selected }
+    let view = null;
+
+    function show(el, text, kind = '') { el.textContent = text; el.className = 'msg ' + kind; }
+    const msg = (t, k) => show($('msg'), t, k);
+    const lmsg = (t, k) => show($('listMsg'), t, k);
 
     function busy(btn, on) {
       btn.disabled = on;
       btn.dataset.label ??= btn.innerHTML;
       btn.innerHTML = on ? '<span class="spinner"></span>' : btn.dataset.label;
     }
-
-    function backToForm() {
-      master = null;
-      $('queueBox').classList.add('hidden');
-      form.classList.remove('hidden');
-      input.focus();
-    }
-
     const errText = (err) => (err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message);
+    const left = (c) => {
+      const m = Math.max(0, Math.round((c.createdAt.toMillis() + c.ttlMinutes * 60000 - Date.now()) / 60000));
+      return m >= 60 ? `עוד ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ש׳` : `עוד ${m} דק׳`;
+    };
 
-    async function printIds(ids) {
-      show('מוריד קבצים...');
-      const files = [];
-      for (const id of ids) files.push(await downloadFile(id));
-      await printSequentially(files, (i, f) => {
-        show(files.length > 1 ? `מדפיס ${i + 1} מתוך ${files.length}: ${f.name}` : `מדפיס: ${f.name}`);
-      });
-    }
-
+    // ---------- הזנת קוד ----------
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const code = input.value.trim();
       if (!code) return;
       busy(go, true);
-      show('');
+      msg('');
       try {
         const c = await fetchCode(code);
         const problem = codeProblem(c);
         if (problem) {
-          show(problem, 'err');
-        } else if (c.master) {
-          const q = await openQueue(code);
-          if (!q.length) {
-            show('התור ריק, אין מה להדפיס', 'err');
-          } else {
-            master = code;
-            $('queueCount').textContent = q.length;
-            form.classList.add('hidden');
-            $('queueBox').classList.remove('hidden');
-          }
+          msg(problem, 'err');
+        } else if (c.kind === 'master') {
+          await openList({ kind: 'master', code });
+        } else if (c.kind === 'personal') {
+          await openList({ kind: 'personal', code, email: c.email });
         } else {
           await redeemFileCode(code, c);
-          await printIds([c.fileId]);
-          show(c.singleUse ? '✓ נשלח להדפסה. הקוד אינו תקף יותר.' : '✓ נשלח להדפסה.', 'ok');
+          msg('מוריד...');
+          const f = await downloadFile(c.fileId);
+          msg('מדפיס: ' + f.name);
+          await printSequentially([f]);
+          msg(c.singleUse ? '✓ נשלח להדפסה. הקוד אינו תקף יותר.' : '✓ נשלח להדפסה.', 'ok');
           input.value = '';
         }
       } catch (err) {
         console.error(err);
-        show(errText(err), 'err');
+        msg(errText(err), 'err');
       }
       busy(go, false);
     });
 
-    $('printAll').addEventListener('click', async () => {
-      if (!master) return;
-      busy($('printAll'), true);
+    // ---------- רשימות ----------
+    async function openList(v) {
+      await claim(v.code, v.kind === 'master' ? '*' : v.email);
+      view = { open: new Set(), selected: new Set(), ...v };
+      await refresh();
+      $('codeCard').classList.add('hidden');
+      $('listCard').classList.remove('hidden');
+      $('shell').classList.toggle('mid', v.kind === 'master');
+      input.value = '';
+    }
+
+    async function refresh(v = view) {
+      v.files = await fetchQueue(v.kind === 'personal' ? v.email : null);
+      if (v.kind === 'master') {
+        const us = await getDocs(collection(db, 'users'));
+        v.users = new Map(us.docs.map((d) => [d.id, d.data()]));
+      }
+      if (v === view) render();
+    }
+
+    const userLabel = (v, email) => {
+      const name = v.users?.get(email)?.name;
+      return name ? `${name} · ${email}` : email;
+    };
+
+    function fileRow(f) {
+      const code = f.codeActive
+        ? `<span class="chip" dir="ltr">${esc(f.code)}</span><span class="muted tiny">${f.codeData.ttlMinutes ? left(f.codeData) : ''}</span>`
+        : '<span class="muted tiny">ללא קוד</span>';
+      return `<div class="qrow">
+        <div class="nm"><div class="fn" dir="auto">${esc(f.name)}</div><div class="cd">${code}</div></div>
+        <button class="btn soft sm" data-print="${f.id}">הדפסה</button>
+      </div>`;
+    }
+
+    function render() {
+      const files = view.files;
+      lmsg('');
+      if (view.kind === 'personal') {
+        $('listTitle').textContent = 'התור שלך';
+        $('listSub').textContent = `${files.length} קבצים · ${view.email}`;
+        $('list').innerHTML = files.length ? files.map(fileRow).join('') : '<div class="empty">התור ריק</div>';
+        $('listActions').innerHTML = files.length ? `<button class="btn grad block" data-printall>הדפסת הכל (${files.length})</button>` : '';
+        return;
+      }
+      // מאסטר: קבוצה לכל משתמש
+      const groups = new Map();
+      files.forEach((f) => { if (!groups.has(f.ownerEmail)) groups.set(f.ownerEmail, []); groups.get(f.ownerEmail).push(f); });
+      $('listTitle').textContent = 'כל התורים';
+      $('listSub').textContent = `${files.length} קבצים · ${groups.size} משתמשים`;
+      $('list').innerHTML = groups.size ? [...groups].map(([email, fs]) => {
+        const open = view.open.has(email);
+        return `<div class="ugroup ${open ? 'open' : ''}">
+          <div class="uhead">
+            <label class="check"><input type="checkbox" data-sel="${esc(email)}" ${view.selected.has(email) ? 'checked' : ''}></label>
+            <button class="uname" data-toggle="${esc(email)}">
+              <span class="fn" dir="auto">${esc(view.users?.get(email)?.name || email)}</span>
+              ${view.users?.get(email)?.name ? `<span class="muted tiny" dir="ltr">${esc(email)}</span>` : ''}
+            </button>
+            <span class="badge">${fs.length}</span>
+            <button class="btn soft sm" data-printuser="${esc(email)}">הדפסה</button>
+          </div>
+          ${open ? `<div class="ufiles">${fs.map(fileRow).join('')}</div>` : ''}
+        </div>`;
+      }).join('') : '<div class="empty">כל התורים ריקים</div>';
+      const n = view.selected.size;
+      $('listActions').innerHTML = groups.size
+        ? (n ? `<button class="btn grad block" data-printsel>הדפסת ${n} משתמשים נבחרים</button>` : '')
+          + `<button class="btn ${n ? 'ghost' : 'grad'} block" data-printall>הדפסת הכל (${files.length})</button>`
+        : '';
+    }
+
+    // מדפיס רשימת קבצים: מוציא מהתור, מוריד, ופותח חלונית הדפסה לכל אחד.
+    // בקוד מאסטר כל עמוד מקבל כותרת עם השם והמייל של בעל הקובץ.
+    async function printFiles(list, btn) {
+      if (!list.length) return;
+      const v = view; // הרשימה יכולה להיסגר באמצע ההדפסה
+      busy(btn, true);
+      lmsg('מכין להדפסה...');
       try {
-        // טוענים את התור מחדש ברגע הלחיצה, ומנצלים את הקוד של כל קובץ בו
-        const ids = await consumeQueue(await openQueue(master));
-        if (!ids.length) {
-          show('התור ריק, אין מה להדפיס', 'err');
-        } else {
-          await printIds(ids);
-          show(`✓ ${ids.length} קבצים נשלחו להדפסה`, 'ok');
+        await claim(v.code, v.kind === 'master' ? '*' : v.email);
+        const taken = [];
+        for (const f of list) if (await markPrinted(f)) taken.push(f);
+        lmsg('מוריד קבצים...');
+        const files = [];
+        for (const f of taken) {
+          const d = await downloadFile(f.id, f);
+          if (v.kind === 'master') d.header = userLabel(v, f.ownerEmail);
+          files.push(d);
         }
-        input.value = '';
+        await printSequentially(files, (i, f) => lmsg(files.length > 1 ? `מדפיס ${i + 1} מתוך ${files.length}: ${f.name}` : `מדפיס: ${f.name}`));
+        await refresh(v);
+        lmsg(taken.length === list.length ? `✓ ${taken.length} קבצים נשלחו להדפסה` : `✓ ${taken.length} נשלחו. ${list.length - taken.length} כבר הודפסו קודם.`, 'ok');
       } catch (err) {
         console.error(err);
-        show(errText(err), 'err');
+        lmsg(errText(err), 'err');
       }
-      busy($('printAll'), false);
-      backToForm();
-    });
+      busy(btn, false);
+    }
 
-    $('cancel').addEventListener('click', () => { show(''); backToForm(); });
+    $('listCard').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b || !view) return;
+      if (b.dataset.print) return printFiles(view.files.filter((f) => f.id === b.dataset.print), b);
+      if (b.dataset.printuser) return printFiles(view.files.filter((f) => f.ownerEmail === b.dataset.printuser), b);
+      if ('printsel' in b.dataset) return printFiles(view.files.filter((f) => view.selected.has(f.ownerEmail)), b);
+      if ('printall' in b.dataset) return printFiles(view.files, b);
+      if (b.dataset.toggle) {
+        const email = b.dataset.toggle;
+        view.open.has(email) ? view.open.delete(email) : view.open.add(email);
+        render();
+      }
+    });
+    $('listCard').addEventListener('change', (e) => {
+      const email = e.target.dataset.sel;
+      if (!email) return;
+      e.target.checked ? view.selected.add(email) : view.selected.delete(email);
+      render();
+    });
+    $('close').addEventListener('click', () => {
+      view = null;
+      $('listCard').classList.add('hidden');
+      $('codeCard').classList.remove('hidden');
+      $('shell').classList.remove('mid');
+      msg('');
+      input.focus();
+    });
   </script>
 </body>
 </html>

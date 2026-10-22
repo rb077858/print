@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#3b5bfd">
+  <title>התור שלי</title>
+  <link rel="stylesheet" href="../assets/style.css?v=6">
+</head>
+<body>
+  <div class="shell mid" id="shell">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/></svg>
+      </div>
+      <div style="min-width:0">
+        <h1>התור שלי</h1>
+        <p id="acct">מעלים קבצים ומדפיסים עם קוד</p>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn ghost sm hidden" id="logout">יציאה</button>
+    </div>
+
+    <!-- כניסה / סטטוס חשבון -->
+    <div class="card hidden" id="gateCard" style="text-align:center">
+      <div id="gateLogin">
+        <p class="muted" style="margin-top:0">כדי להעלות קבצים צריך להתחבר עם חשבון Google שאושר על ידי המנהל.</p>
+        <button class="btn grad block" id="login">
+          <svg viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1H12v2.98h5.35c-.23 1.4-1.66 4.1-5.35 4.1-3.22 0-5.85-2.67-5.85-5.96S8.78 6.26 12 6.26c1.83 0 3.06.78 3.76 1.45l2.56-2.47C16.68 3.7 14.55 2.75 12 2.75 6.9 2.75 2.75 6.9 2.75 12S6.9 21.25 12 21.25c5.34 0 8.88-3.75 8.88-9.04 0-.6-.07-1.07-.16-1.53z"/></svg>
+          כניסה עם Google
+        </button>
+      </div>
+      <div id="gateStatus" class="hidden">
+        <div id="gateIcon" style="font-size:2.4rem;line-height:1"></div>
+        <h2 id="gateTitle" style="justify-content:center;margin:10px 0 6px"></h2>
+        <p class="muted" id="gateText" style="margin:0"></p>
+        <div class="stack">
+          <button class="btn soft block hidden" id="recheck">בדיקה מחדש</button>
+          <button class="btn ghost block" id="logout2">התנתקות</button>
+        </div>
+      </div>
+      <div id="gateMsg" class="msg err"></div>
+    </div>
+
+    <div id="app" class="hidden">
+      <!-- קוד אישי -->
+      <div class="card master">
+        <h2>הקוד האישי שלי</h2>
+        <p class="hint">מקלידים אותו בדף ההדפסה כדי לראות את כל התור שלך ולהדפיס ממנו.</p>
+        <div class="master-row">
+          <span class="master-code" id="pcode">——————</span>
+          <button class="btn sm" id="pcopy">העתקה</button>
+          <button class="btn sm" id="preset">קוד חדש</button>
+        </div>
+      </div>
+
+      <!-- העלאה -->
+      <div class="card">
+        <label class="drop compact" id="drop">
+          <input id="fileInput" type="file" multiple>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>
+          <span><strong>הוספת קבצים לתור</strong> · PDF, תמונה או טקסט</span>
+        </label>
+        <div id="uploading" class="hidden">
+          <div class="file-line"><span class="spinner" style="color:var(--accent)"></span><span id="upName"></span></div>
+          <div class="progress"><div id="bar"></div></div>
+        </div>
+        <p class="muted tiny" style="margin:10px 0 0">כל קובץ מקבל קוד להדפסה שתקף לשעתיים. אחרי שהקוד פג הקובץ נשאר בתור, ואפשר להדפיס אותו עם הקוד האישי. קובץ שהודפס יוצא מהתור.</p>
+      </div>
+
+      <!-- התור -->
+      <div class="card">
+        <h2>בתור <span class="badge" id="count">0</span></h2>
+        <div id="queue" class="qlist"></div>
+      </div>
+    </div>
+
+    <div class="footer-link"><a href="../">לדף ההדפסה ←</a></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script type="module">
+    import {
+      auth, db, ACCEPT, isPrintable, senderState, resetPersonalCode, uploadToQueue, codeStatus, expiresAt, formatSize, ms,
+    } from '../assets/common.js?v=6';
+    import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+    import {
+      collection, doc, getDoc, onSnapshot, query, where, updateDoc, writeBatch,
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+    const $ = (id) => document.getElementById(id);
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    const fmtDate = (t) => new Date(t).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
+    let me = null;          // { user, u }
+    let files = [];         // הקבצים שבתור, עם codeData
+    let editing = null;     // id של קובץ ששמו בעריכה
+    let unsub = null;
+
+    function toast(text, err = false) {
+      const t = $('toast');
+      t.textContent = text;
+      t.className = 'toast show' + (err ? ' err' : '');
+      clearTimeout(toast.timer);
+      toast.timer = setTimeout(() => t.classList.remove('show'), 2200);
+    }
+    const fail = (err) => {
+      console.error(err);
+      toast(err.code === 'permission-denied' ? 'אין הרשאה. ייתכן שהחשבון נחסם או שפג תוקפו.' : 'שגיאה: ' + err.message, true);
+    };
+
+    // ---------- כניסה ----------
+    const GATE = {
+      pending: ['⏳', 'הבקשה נשלחה למנהל', (e) => `החשבון ${e} ממתין לאישור. אחרי האישור אפשר יהיה להעלות קבצים.`],
+      blocked: ['⛔', 'החשבון חסום', (e) => `החשבון ${e} נחסם על ידי המנהל.`],
+      expired: ['⌛', 'תוקף החשבון הסתיים', (e, u) => `הגישה של ${e} הסתיימה ב-${fmtDate(ms(u.activeUntil))}. פנו למנהל לחידוש.`],
+    };
+
+    async function enter(user) {
+      unsub?.();
+      unsub = null;
+      const signed = user && !user.isAnonymous;
+      $('logout').classList.toggle('hidden', !signed);
+      const { state, u } = signed ? await senderState(user) : { state: 'login' };
+      $('gateCard').classList.toggle('hidden', state === 'ok');
+      $('app').classList.toggle('hidden', state !== 'ok');
+      $('gateLogin').classList.toggle('hidden', state !== 'login');
+      $('gateStatus').classList.toggle('hidden', state === 'login' || state === 'ok');
+      if (GATE[state]) {
+        const [icon, title, text] = GATE[state];
+        $('gateIcon').textContent = icon;
+        $('gateTitle').textContent = title;
+        $('gateText').textContent = text(user.email, u);
+        $('recheck').classList.toggle('hidden', state === 'blocked');
+      }
+      if (state !== 'ok') { $('acct').textContent = 'מעלים קבצים ומדפיסים עם קוד'; return; }
+
+      me = { user, u };
+      $('acct').textContent = user.email + (u.activeUntil ? ' · פעיל עד ' + fmtDate(ms(u.activeUntil)) : '');
+      if (!u.personalCode) u.personalCode = await resetPersonalCode(null);
+      $('pcode').textContent = u.personalCode;
+
+      const q = query(collection(db, 'files'), where('ownerEmail', '==', user.email), where('inQueue', '==', true));
+      let seq = 0;
+      unsub = onSnapshot(q, { includeMetadataChanges: true }, async (snap) => {
+        // מחכים לאישור מהשרת, כדי שהקוד של קובץ חדש כבר יהיה קיים כשבודקים אותו
+        if (snap.metadata.hasPendingWrites) return;
+        const mine = ++seq;
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data({ serverTimestamps: 'estimate' }) }))
+          .sort((a, b) => ms(a.createdAt) - ms(b.createdAt));
+        await Promise.all(list.map(async (f) => {
+          f.codeData = f.code ? (await getDoc(doc(db, 'codes', f.code))).data() ?? null : null;
+        }));
+        if (mine !== seq) return; // הגיע עדכון חדש יותר בזמן הטעינה
+        files = list;
+        render();
+      }, fail);
+    }
+
+    onAuthStateChanged(auth, (user) => enter(user).catch((err) => {
+      console.error(err);
+      $('gateCard').classList.remove('hidden');
+      $('gateMsg').textContent = 'שגיאה: ' + err.message;
+    }));
+    $('login').addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()).catch((err) => {
+      if (err.code !== 'auth/popup-closed-by-user') $('gateMsg').textContent = 'ההתחברות נכשלה: ' + err.message;
+    }));
+    $('recheck').addEventListener('click', () => enter(auth.currentUser).catch(fail));
+    $('logout').addEventListener('click', () => signOut(auth));
+    $('logout2').addEventListener('click', () => signOut(auth));
+
+    // ---------- קוד אישי ----------
+    $('pcopy').addEventListener('click', async () => {
+      await navigator.clipboard.writeText(me.u.personalCode);
+      toast('הקוד האישי הועתק');
+    });
+    $('preset').addEventListener('click', async () => {
+      if (!confirm('ליצור קוד אישי חדש? הקוד הנוכחי יפסיק לעבוד.')) return;
+      try {
+        me.u.personalCode = await resetPersonalCode(me.u.personalCode);
+        $('pcode').textContent = me.u.personalCode;
+        toast('קוד אישי חדש: ' + me.u.personalCode);
+      } catch (err) {
+        fail(err);
+      }
+    });
+
+    // ---------- התור ----------
+    function codeCell(f) {
+      const c = f.codeData;
+      if (c && codeStatus(c) === 'active') {
+        const until = expiresAt(c);
+        const t = until === Infinity ? 'ללא תוקף' : 'עד ' + new Date(until).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        return `<span class="chip" dir="ltr">${esc(f.code)}</span>
+          <button class="btn ghost icon" data-act="copy" data-id="${f.id}" title="העתקת הקוד" aria-label="העתקת הקוד" style="padding:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
+          <span class="muted tiny">${t}</span>`;
+      }
+      if (!f.code) return '<span class="muted tiny">יוצר קוד…</span>';
+      return '<span class="muted tiny">הקוד פג · אפשר להדפיס עם הקוד האישי</span>';
+    }
+
+    function render() {
+      $('count').textContent = files.length;
+      $('queue').innerHTML = files.length ? files.map((f) => `<div class="qrow">
+        <div class="nm">
+          ${editing === f.id
+            ? `<div class="opts"><input type="text" data-name="${f.id}" value="${esc(f.name)}" maxlength="200" style="flex:1;padding:6px 10px">
+                <button class="btn sm" data-act="saveName" data-id="${f.id}">שמירה</button>
+                <button class="btn ghost sm" data-act="cancel">ביטול</button></div>`
+            : `<div class="fn" dir="auto">${esc(f.name)}</div>`}
+          <div class="cd">${codeCell(f)}</div>
+          <div class="muted tiny"><bdi>${formatSize(f.size)}</bdi> · <bdi>${new Date(ms(f.createdAt)).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })}</bdi></div>
+        </div>
+        ${editing === f.id ? '' : `
+        <button class="btn ghost icon" data-act="rename" data-id="${f.id}" title="שינוי שם" aria-label="שינוי שם"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button>
+        <button class="btn danger icon" data-act="delete" data-id="${f.id}" title="מחיקה" aria-label="מחיקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>`}
+      </div>`).join('') : '<div class="empty">התור ריק. הוסיפו קבצים למעלה.</div>';
+    }
+    setInterval(() => { if (files.length && !editing) render(); }, 30000);
+
+    async function act(name, id) {
+      const f = files.find((x) => x.id === id);
+      if (name === 'copy') { await navigator.clipboard.writeText(f.code); return toast('הקוד הועתק'); }
+      if (name === 'rename') { editing = id; render(); document.querySelector(`[data-name="${id}"]`)?.select(); return; }
+      if (name === 'cancel') { editing = null; return render(); }
+      if (name === 'saveName') {
+        const v = document.querySelector(`[data-name="${id}"]`).value.trim();
+        if (!v) return toast('השם ריק', true);
+        await updateDoc(doc(db, 'files', id), { name: v });
+        editing = null;
+        return toast('השם עודכן');
+      }
+      if (name === 'delete') {
+        if (!confirm(`למחוק את "${f.name}" מהתור?`)) return;
+        const batch = writeBatch(db);
+        for (let i = 0; i < f.chunks; i++) batch.delete(doc(db, 'files', id, 'chunks', String(i)));
+        if (f.codeData?.kind === 'file') batch.delete(doc(db, 'codes', f.code));
+        batch.delete(doc(db, 'files', id));
+        await batch.commit();
+        toast('הקובץ נמחק');
+      }
+    }
+    $('queue').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-act]');
+      if (b) act(b.dataset.act, b.dataset.id).catch(fail);
+    });
+    $('queue').addEventListener('keydown', (e) => {
+      if (e.target.dataset.name && e.key === 'Enter') act('saveName', e.target.dataset.name).catch(fail);
+      if (e.target.dataset.name && e.key === 'Escape') act('cancel').catch(fail);
+    });
+
+    // ---------- העלאה ----------
+    const fileInput = $('fileInput'), drop = $('drop');
+    fileInput.accept = ACCEPT;
+
+    async function uploadMany(list) {
+      const arr = [...list];
+      if (!arr.length) return;
+      drop.classList.add('hidden');
+      $('uploading').classList.remove('hidden');
+      let last = null;
+      try {
+        for (let i = 0; i < arr.length; i++) {
+          if (!isPrintable(arr[i])) { toast(`דילגתי על ${arr[i].name} (סוג לא נתמך)`, true); continue; }
+          $('upName').textContent = arr.length > 1 ? `${i + 1}/${arr.length} · ${arr[i].name}` : arr[i].name;
+          $('bar').style.width = '0';
+          last = await uploadToQueue(arr[i], (p) => { $('bar').style.width = (p * 100) + '%'; });
+        }
+        if (last) toast(arr.length === 1 ? `נוסף לתור · קוד ${last.code}` : 'הקבצים נוספו לתור');
+      } catch (err) {
+        fail(err);
+      }
+      drop.classList.remove('hidden');
+      $('uploading').classList.add('hidden');
+      fileInput.value = '';
+    }
+
+    fileInput.addEventListener('change', () => uploadMany(fileInput.files));
+    drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+    drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+    drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); uploadMany(e.dataTransfer.files); });
+  </script>
+</body>
+</html>
