@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3b5bfd">
   <title>התור שלי</title>
-  <link rel="stylesheet" href="../assets/style.css?v=6">
+  <link rel="stylesheet" href="../assets/style.css?v=7">
 </head>
 <body>
   <div class="shell mid" id="shell">
@@ -65,7 +65,7 @@
           <div class="file-line"><span class="spinner" style="color:var(--accent)"></span><span id="upName"></span></div>
           <div class="progress"><div id="bar"></div></div>
         </div>
-        <p class="muted tiny" style="margin:10px 0 0">כל קובץ מקבל קוד להדפסה שתקף לשעתיים. אחרי שהקוד פג הקובץ נשאר בתור, ואפשר להדפיס אותו עם הקוד האישי. קובץ שהודפס יוצא מהתור.</p>
+        <p class="muted tiny" style="margin:10px 0 0">כל קובץ מקבל קוד להדפסה שתקף ל-24 שעות. אחרי שהקוד פג הקובץ נשאר בתור: אפשר להדפיס אותו עם הקוד האישי, או ליצור לו קוד חדש. קובץ שהודפס יוצא מהתור.</p>
       </div>
 
       <!-- התור -->
@@ -82,8 +82,8 @@
 
   <script type="module">
     import {
-      auth, db, ACCEPT, isPrintable, senderState, resetPersonalCode, uploadToQueue, codeStatus, expiresAt, formatSize, ms,
-    } from '../assets/common.js?v=6';
+      auth, db, ACCEPT, isPrintable, senderState, resetPersonalCode, uploadToQueue, createFileCode, codeStatus, expiresAt, formatSize, ms,
+    } from '../assets/common.js?v=7';
     import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import {
       collection, doc, getDoc, onSnapshot, query, where, updateDoc, writeBatch,
@@ -191,13 +191,14 @@
       const c = f.codeData;
       if (c && codeStatus(c) === 'active') {
         const until = expiresAt(c);
-        const t = until === Infinity ? 'ללא תוקף' : 'עד ' + new Date(until).toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+        const t = until === Infinity ? 'ללא תוקף' : 'בתוקף עד ' + new Date(until).toLocaleString('he-IL', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
         return `<span class="chip" dir="ltr">${esc(f.code)}</span>
           <button class="btn ghost icon" data-act="copy" data-id="${f.id}" title="העתקת הקוד" aria-label="העתקת הקוד" style="padding:4px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
           <span class="muted tiny">${t}</span>`;
       }
       if (!f.code) return '<span class="muted tiny">יוצר קוד…</span>';
-      return '<span class="muted tiny">הקוד פג · אפשר להדפיס עם הקוד האישי</span>';
+      return `<span class="muted tiny">אין קוד בתוקף</span>
+        <button class="btn soft sm" data-act="newCode" data-id="${f.id}" style="padding:3px 10px">יצירת קוד חדש</button>`;
     }
 
     function render() {
@@ -222,6 +223,10 @@
     async function act(name, id) {
       const f = files.find((x) => x.id === id);
       if (name === 'copy') { await navigator.clipboard.writeText(f.code); return toast('הקוד הועתק'); }
+      if (name === 'newCode') {
+        const code = await createFileCode(id, f.code);
+        return toast('קוד חדש: ' + code);
+      }
       if (name === 'rename') { editing = id; render(); document.querySelector(`[data-name="${id}"]`)?.select(); return; }
       if (name === 'cancel') { editing = null; return render(); }
       if (name === 'saveName') {

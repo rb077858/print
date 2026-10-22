@@ -52,6 +52,11 @@ service cloud.firestore {
         || request.time < c.createdAt + duration.value(c.ttlMinutes, 'm');
     }
 
+    // קוד של קובץ שעדיין אפשר להשתמש בו
+    function codeActive(c) {
+      return c.used == false && alive(c);
+    }
+
     // הקוד סומן כמשומש בדיוק בכתיבה הזו, על ידי המשתמש הזה
     function usedNow(c) {
       return c.singleUse == true && c.used == true
@@ -103,9 +108,11 @@ service cloud.firestore {
           && request.resource.data.name is string
           && request.resource.data.name.size() > 0
           && request.resource.data.name.size() <= 200)
-        // הבעלים מצמיד לקובץ את הקוד שנוצר לו (פעם אחת)
+        // הבעלים מצמיד לקובץ קוד חדש: רק אם אין לו קוד בתוקף (אי אפשר "לאפס" קוד פעיל)
         || (ownsFile(resource.data)
-          && resource.data.code == null
+          && (resource.data.code == null
+            || !exists(/databases/$(database)/documents/codes/$(resource.data.code))
+            || !codeActive(get(/databases/$(database)/documents/codes/$(resource.data.code)).data))
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['code'])
           && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.kind == 'file'
           && getAfter(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.fileId == fileId)
@@ -145,14 +152,14 @@ service cloud.firestore {
       allow list: if isAdmin();
 
       allow create: if isAdmin()
-        // קוד לקובץ חדש: 6 ספרות, חד-פעמי, שעתיים, לקובץ של המשתמש עצמו
+        // קוד לקובץ: 6 ספרות, חד-פעמי, 24 שעות, לקובץ של המשתמש עצמו
         || (canSend()
           && code.matches('^[0-9]{6}$')
           && request.resource.data.keys().hasOnly(['kind', 'fileId', 'ownerEmail', 'singleUse', 'ttlMinutes', 'used', 'createdAt', 'createdBy'])
           && request.resource.data.kind == 'file'
           && request.resource.data.singleUse == true
           && request.resource.data.used == false
-          && request.resource.data.ttlMinutes == 120
+          && request.resource.data.ttlMinutes == 1440
           && request.resource.data.createdAt == request.time
           && request.resource.data.createdBy == request.auth.uid
           && request.resource.data.ownerEmail == myEmail()
@@ -176,10 +183,13 @@ service cloud.firestore {
         && request.resource.data.usedBy == request.auth.uid
         && request.resource.data.usedAt == request.time);
 
-      // המשתמש מוחק את הקוד האישי הישן שלו, או קוד של קובץ שהוא מוחק
+      // המשתמש מוחק את הקוד האישי הישן שלו, או קוד של קובץ שלו:
+      // יחד עם מחיקת הקובץ, או קוד שכבר לא בתוקף
       allow delete: if isAdmin() || (canSend()
         && ((resource.data.kind == 'personal' && resource.data.email == myEmail())
-          || (resource.data.kind == 'file' && resource.data.ownerEmail == myEmail())));
+          || (resource.data.kind == 'file' && resource.data.ownerEmail == myEmail()
+            && (!existsAfter(/databases/$(database)/documents/files/$(resource.data.fileId))
+              || !codeActive(resource.data)))));
     }
 
     match /access/{id} {

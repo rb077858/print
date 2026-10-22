@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/1
 import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, Bytes, query, where,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js?v=6';
+import { firebaseConfig } from './firebase-config.js?v=7';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -13,7 +13,7 @@ export const ADMIN_EMAIL = 'rb077858@gmail.com';
 export const CHUNK_SIZE = 750 * 1024; // מסמך ב-Firestore מוגבל ל-1MB
 export const MAX_SIZE = 15 * 1024 * 1024;
 export const ACCEPT = '.pdf,application/pdf,image/*,.txt,text/plain';
-export const FILE_CODE_TTL = 120; // דקות
+export const FILE_CODE_TTL = 1440; // דקות (24 שעות)
 
 export async function ensureUser() {
   await auth.authStateReady();
@@ -89,7 +89,7 @@ export async function resetPersonalCode(oldCode) {
 
 // ---------- קבצים ----------
 
-// שומר קובץ בתור של המשתמש (תוכן בחתיכות) ויוצר לו קוד חד-פעמי לשעתיים
+// שומר קובץ בתור של המשתמש (תוכן בחתיכות) ויוצר לו קוד חד-פעמי ל-24 שעות
 export async function uploadToQueue(file, onProgress) {
   if (file.size > MAX_SIZE) throw new Error('הקובץ גדול מדי (מקסימום ' + formatSize(MAX_SIZE) + ')');
   const user = auth.currentUser;
@@ -113,13 +113,22 @@ export async function uploadToQueue(file, onProgress) {
     await setDoc(doc(db, 'files', ref.id, 'chunks', String(i)), { d: Bytes.fromUint8Array(part) });
     onProgress?.((i + 1) / chunks);
   }
+  const code = await createFileCode(ref.id, null);
+  return { id: ref.id, code };
+}
+
+// יוצר קוד חדש לקובץ של המשתמש ומצמיד אותו לקובץ. מותר רק כשלקובץ אין קוד בתוקף;
+// הקוד הישן (שפג או נוצל) נמחק.
+export async function createFileCode(fileId, oldCode) {
+  const user = auth.currentUser;
   for (let attempt = 0; attempt < 8; attempt++) {
     const code = randomCode();
     const batch = writeBatch(db);
     // אם הקוד כבר תפוס הכתיבה תיחשב כעדכון ותידחה, ואז ננסה קוד אחר
+    if (oldCode) batch.delete(doc(db, 'codes', oldCode));
     batch.set(doc(db, 'codes', code), {
       kind: 'file',
-      fileId: ref.id,
+      fileId,
       ownerEmail: user.email,
       singleUse: true,
       ttlMinutes: FILE_CODE_TTL,
@@ -127,10 +136,10 @@ export async function uploadToQueue(file, onProgress) {
       createdAt: serverTimestamp(),
       createdBy: user.uid,
     });
-    batch.update(ref, { code });
+    batch.update(doc(db, 'files', fileId), { code });
     try {
       await batch.commit();
-      return { id: ref.id, code };
+      return code;
     } catch (err) {
       if (err.code !== 'permission-denied') throw err;
     }

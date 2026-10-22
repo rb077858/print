@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3b5bfd">
   <title>הדפסה עם קוד</title>
-  <link rel="stylesheet" href="./assets/style.css?v=6">
+  <link rel="stylesheet" href="./assets/style.css?v=7">
 </head>
 <body>
   <div class="shell center" id="shell">
@@ -51,7 +51,7 @@
   <script type="module">
     import {
       fetchCode, codeProblem, redeemFileCode, claim, fetchQueue, markPrinted, downloadFile, printSequentially, db,
-    } from './assets/common.js?v=6';
+    } from './assets/common.js?v=7';
     import { collection, getDocs } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
@@ -71,10 +71,6 @@
       btn.innerHTML = on ? '<span class="spinner"></span>' : btn.dataset.label;
     }
     const errText = (err) => (err.code === 'permission-denied' ? 'הקוד אינו תקף' : 'שגיאה: ' + err.message);
-    const left = (c) => {
-      const m = Math.max(0, Math.round((c.createdAt.toMillis() + c.ttlMinutes * 60000 - Date.now()) / 60000));
-      return m >= 60 ? `עוד ${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')} ש׳` : `עוד ${m} דק׳`;
-    };
 
     // ---------- הזנת קוד ----------
     form.addEventListener('submit', async (e) => {
@@ -135,7 +131,7 @@
 
     function fileRow(f) {
       const code = f.codeActive
-        ? `<span class="chip" dir="ltr">${esc(f.code)}</span><span class="muted tiny">${f.codeData.ttlMinutes ? left(f.codeData) : ''}</span>`
+        ? `<span class="chip" dir="ltr">${esc(f.code)}</span>`
         : '<span class="muted tiny">ללא קוד</span>';
       return `<div class="qrow">
         <div class="nm"><div class="fn" dir="auto">${esc(f.name)}</div><div class="cd">${code}</div></div>
