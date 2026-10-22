@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3b5bfd">
   <title>ניהול הדפסות</title>
-  <link rel="stylesheet" href="../assets/style.css?v=4">
+  <link rel="stylesheet" href="../assets/style.css?v=5">
 </head>
 <body>
   <!-- כניסה -->
@@ -59,6 +59,12 @@
       </div>
     </div>
 
+    <div class="tabs" id="nav" style="margin-bottom:16px;width:fit-content;max-width:100%">
+      <button data-view="files" class="on">קבצים</button>
+      <button data-view="users">משתמשים <span class="badge warn hidden" id="pendingBadge"></span></button>
+    </div>
+
+    <div id="filesSection">
     <!-- העלאה -->
     <div class="card">
       <h2>העלאת קבצים</h2>
@@ -84,17 +90,36 @@
     <div class="files" id="files"></div>
 
     <div style="text-align:center;margin-top:24px">
-      <button class="btn ghost sm" id="cleanup">ניקוי: מחיקת קבצים מ-/send שהקוד שלהם נוצל או פג</button>
+      <button class="btn ghost sm" id="cleanup">ניקוי: מחיקת קבצים שנשלחו דרך האתר והקוד שלהם נוצל או פג</button>
+    </div>
+    </div>
+
+    <!-- משתמשים -->
+    <div id="usersSection" class="hidden">
+      <div class="card">
+        <h2>הוספת משתמש</h2>
+        <p class="hint">רק משתמשים שאושרו כאן יכולים להתחבר עם Google ולשלוח קבצים בדף השליחה. מי שמתחבר בלי אישור מופיע כאן כ"ממתין".</p>
+        <div class="opts">
+          <input type="text" id="newEmail" placeholder="email@gmail.com" style="direction:ltr;flex:1;min-width:200px">
+          <select id="newPeriod"></select>
+          <input type="date" id="newDate" class="hidden">
+          <button class="btn" id="addUser">הוספה</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="tabs" id="userTabs"></div>
+      </div>
+      <div class="files" id="users"></div>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
 
   <script type="module">
-    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeStatus, expiresAt, isPrintable } from '../assets/common.js?v=4';
+    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeStatus, expiresAt, isPrintable } from '../assets/common.js?v=5';
     import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import {
-      collection, getDocs, getDoc, doc, writeBatch, serverTimestamp,
+      collection, getDocs, getDoc, doc, setDoc, updateDoc, deleteDoc, writeBatch, serverTimestamp, Timestamp,
     } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
     const $ = (id) => document.getElementById(id);
@@ -107,6 +132,8 @@
     let master = null;       // {id, ...}
     let tab = 'all';
     let editingCode = null;  // fileId שהקוד שלו בעריכה
+    let users = [];          // [{id: email, ...}]
+    let userTab = 'pending';
 
     function toast(text, err = false) {
       const t = $('toast');
@@ -151,7 +178,8 @@
 
     async function reload(depth = 0) {
       const fetchedAt = Date.now();
-      const [fs, cs, qs] = await Promise.all(['files', 'codes', 'queue'].map((n) => getDocs(collection(db, n))));
+      const [fs, cs, qs, us] = await Promise.all(['files', 'codes', 'queue', 'users'].map((n) => getDocs(collection(db, n))));
+      users = us.docs.map((d) => ({ id: d.id, ...d.data() }));
       files = fs.docs.map((d) => ({ id: d.id, ...d.data() })).sort((a, b) => ms(b.createdAt) - ms(a.createdAt));
       const codes = cs.docs.map((d) => ({ id: d.id, ...d.data() }));
       const queue = new Map(qs.docs.map((d) => [d.id, d.data()]));
@@ -225,6 +253,7 @@
     const TABS = [['all', 'הכל'], ['queue', 'בתור'], ['multi', 'רב-פעמיים'], ['used', 'נוצלו'], ['expired', 'פגו']];
 
     function render() {
+      renderUsers();
       // מאסטר
       $('masterCode').textContent = master ? master.id : 'אין';
       $('masterDel').classList.toggle('hidden', !master);
@@ -267,7 +296,7 @@
           <div class="ficon">${esc(ext)}</div>
           <div style="flex:1;min-width:0">
             <div class="fname" dir="auto">${esc(f.name)}</div>
-            <div class="fmeta"><bdi>${formatSize(f.size)}</bdi> · <bdi>${f.createdAt ? fmtTime(ms(f.createdAt)) : ''}</bdi> · ${f.source === 'send' ? 'נשלח דרך האתר' : 'הועלה על ידי המנהל'}</div>
+            <div class="fmeta"><bdi>${formatSize(f.size)}</bdi> · <bdi>${f.createdAt ? fmtTime(ms(f.createdAt)) : ''}</bdi> · ${f.source === 'send' ? 'נשלח על ידי <bdi>' + esc(f.ownerEmail ?? 'אורח') + '</bdi>' : 'הועלה על ידי המנהל'}</div>
           </div>
           <span class="badge ${stCls}">${stLabel}</span>
         </div>
@@ -463,6 +492,149 @@
     drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
     drop.addEventListener('dragleave', () => drop.classList.remove('over'));
     drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); uploadMany(e.dataTransfer.files); });
+
+    // ---------- ניווט ----------
+    $('nav').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-view]');
+      if (!b) return;
+      $('nav').querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+      $('filesSection').classList.toggle('hidden', b.dataset.view !== 'files');
+      $('usersSection').classList.toggle('hidden', b.dataset.view !== 'users');
+    });
+
+    // ---------- משתמשים ----------
+    const PERIODS = [['10', '10 ימים'], ['30', '30 ימים'], ['90', '90 ימים'], ['365', 'שנה'], ['0', 'ללא הגבלה'], ['date', 'עד תאריך…']];
+    const periodOptions = (sel = '10') => PERIODS.map(([v, l]) => `<option value="${v}" ${v === sel ? 'selected' : ''}>${l}</option>`).join('');
+    $('newPeriod').innerHTML = periodOptions();
+    $('newPeriod').addEventListener('change', () => $('newDate').classList.toggle('hidden', $('newPeriod').value !== 'date'));
+    const fmtDay = (t) => new Date(t).toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
+    // מחזיר Timestamp של סוף התקופה, null ללא הגבלה, או undefined אם לא נבחר תאריך
+    function untilFrom(period, dateValue) {
+      if (period === '0') return null;
+      if (period === 'date') {
+        if (!dateValue) return undefined;
+        const [y, m, d] = dateValue.split('-').map(Number);
+        return Timestamp.fromDate(new Date(y, m - 1, d, 23, 59, 59));
+      }
+      return Timestamp.fromMillis(Date.now() + Number(period) * 86400000);
+    }
+
+    function userStatus(u) {
+      if (u.blocked) return 'blocked';
+      if (!u.approved) return 'pending';
+      if (u.activeUntil && ms(u.activeUntil) < Date.now()) return 'expired';
+      return 'active';
+    }
+    const USTATUS = { pending: ['ממתין לאישור', 'warn'], active: ['פעיל', 'ok'], expired: ['פג תוקף', 'err'], blocked: ['חסום', 'err'] };
+    const UTABS = [['pending', 'ממתינים'], ['active', 'פעילים'], ['expired', 'פגו'], ['blocked', 'חסומים'], ['all', 'הכל']];
+
+    function renderUsers() {
+      const counts = { all: users.length };
+      users.forEach((u) => { const s = userStatus(u); counts[s] = (counts[s] ?? 0) + 1; });
+      $('pendingBadge').textContent = counts.pending ?? '';
+      $('pendingBadge').classList.toggle('hidden', !counts.pending);
+      $('userTabs').innerHTML = UTABS.map(([k, l]) => `<button data-utab="${k}" class="${userTab === k ? 'on' : ''}">${l}<span class="n">${counts[k] ?? 0}</span></button>`).join('');
+      const list = users.filter((u) => userTab === 'all' || userStatus(u) === userTab)
+        .sort((a, b) => ms(b.requestedAt ?? b.addedAt) - ms(a.requestedAt ?? a.addedAt));
+      $('users').innerHTML = list.length ? list.map(userCard).join('') : '<div class="empty">אין משתמשים כאן</div>';
+    }
+
+    function userCard(u) {
+      const st = userStatus(u);
+      const [label, cls] = USTATUS[st];
+      const sent = files.filter((f) => f.ownerEmail === u.id).length;
+      let line = '';
+      if (st === 'active') line = u.activeUntil ? 'פעיל עד ' + fmtDay(ms(u.activeUntil)) : 'פעיל ללא הגבלת זמן';
+      if (st === 'expired') line = 'הגישה הסתיימה ב-' + fmtDay(ms(u.activeUntil));
+      if (st === 'pending') line = u.requestedAt ? 'ביקש גישה ב-' + fmtTime(ms(u.requestedAt)) : 'עוד לא התחבר';
+      if (st === 'blocked') line = 'חסום';
+      const id = esc(u.id);
+      return `<div class="fcard">
+        <div class="top">
+          <div class="ficon" style="font-size:1rem">${esc((u.name || u.id)[0].toUpperCase())}</div>
+          <div style="flex:1;min-width:0">
+            <div class="fname" dir="ltr" style="text-align:right">${id}</div>
+            <div class="fmeta">${u.name ? esc(u.name) + ' · ' : ''}${sent} קבצים נשלחו</div>
+          </div>
+          <span class="badge ${cls}">${label}</span>
+        </div>
+        <div class="fmeta">${line}</div>
+        ${st === 'blocked' ? '' : `<div class="opts">
+          <span>${st === 'active' ? 'הארכה:' : 'אישור ל:'}</span>
+          <select data-period="${id}">${periodOptions()}</select>
+          <input type="date" data-date="${id}" class="hidden">
+          <button class="btn sm" data-uact="approve" data-id="${id}">${st === 'active' ? 'עדכון' : 'אישור'}</button>
+        </div>`}
+        <div class="actions">
+          ${st === 'blocked'
+            ? `<button class="btn soft sm" data-uact="unblock" data-id="${id}">ביטול חסימה</button>`
+            : `<button class="btn ghost sm" data-uact="block" data-id="${id}">חסימה</button>`}
+          <div style="flex:1"></div>
+          <button class="btn danger icon" data-uact="delete" data-id="${id}" title="מחיקה" aria-label="מחיקה"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg></button>
+        </div>
+      </div>`;
+    }
+
+    $('userTabs').addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-utab]');
+      if (b) { userTab = b.dataset.utab; renderUsers(); }
+    });
+    $('users').addEventListener('change', (e) => {
+      const sel = e.target.closest('select[data-period]');
+      if (sel) document.querySelector(`[data-date="${CSS.escape(sel.dataset.period)}"]`).classList.toggle('hidden', sel.value !== 'date');
+    });
+    $('users').addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-uact]');
+      if (!b) return;
+      const email = b.dataset.id;
+      const ref = doc(db, 'users', email);
+      try {
+        if (b.dataset.uact === 'approve') {
+          const until = untilFrom(document.querySelector(`[data-period="${CSS.escape(email)}"]`).value,
+            document.querySelector(`[data-date="${CSS.escape(email)}"]`).value);
+          if (until === undefined) return toast('בחרו תאריך', true);
+          await updateDoc(ref, { approved: true, blocked: false, activeUntil: until });
+          toast(until ? 'פעיל עד ' + fmtDay(until.toMillis()) : 'פעיל ללא הגבלה');
+        } else if (b.dataset.uact === 'block') {
+          await updateDoc(ref, { blocked: true });
+          toast('המשתמש נחסם');
+        } else if (b.dataset.uact === 'unblock') {
+          await updateDoc(ref, { blocked: false });
+          toast('החסימה בוטלה');
+        } else if (b.dataset.uact === 'delete') {
+          if (!confirm(`למחוק את ${email}? אם יתחבר שוב הוא יופיע כממתין.`)) return;
+          await deleteDoc(ref);
+          toast('המשתמש נמחק');
+        }
+        await reload();
+      } catch (err) {
+        fail(err);
+      }
+    });
+
+    $('addUser').addEventListener('click', async () => {
+      const email = $('newEmail').value.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return toast('כתובת מייל לא תקינה', true);
+      const until = untilFrom($('newPeriod').value, $('newDate').value);
+      if (until === undefined) return toast('בחרו תאריך', true);
+      try {
+        const existing = users.find((u) => u.id === email);
+        await setDoc(doc(db, 'users', email), {
+          name: existing?.name ?? '',
+          requestedAt: existing?.requestedAt ?? null,
+          addedAt: serverTimestamp(),
+          approved: true,
+          blocked: false,
+          activeUntil: until,
+        });
+        $('newEmail').value = '';
+        toast(email + ' נוסף');
+        await reload();
+      } catch (err) {
+        fail(err);
+      }
+    });
 
     // ---------- ניקוי ----------
     $('cleanup').addEventListener('click', async () => {

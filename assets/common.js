@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/1
 import {
   getFirestore, doc, collection, getDoc, getDocs, setDoc, writeBatch, serverTimestamp, Bytes,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js?v=4';
+import { firebaseConfig } from './firebase-config.js?v=5';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -49,6 +49,7 @@ export async function uploadFile(file, source, onProgress) {
     size: file.size,
     chunks,
     owner: user.uid,
+    ownerEmail: user.email ?? null,
     createdAt: serverTimestamp(),
     source,
   });

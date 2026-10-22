@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3b5bfd">
   <title>שליחת קובץ להדפסה</title>
-  <link rel="stylesheet" href="../assets/style.css?v=4">
+  <link rel="stylesheet" href="../assets/style.css?v=5">
 </head>
 <body>
   <div class="shell center">
@@ -19,7 +19,32 @@
       </div>
     </div>
 
-    <div class="card" id="uploadCard">
+    <!-- כניסה / סטטוס חשבון -->
+    <div class="card hidden" id="gateCard" style="text-align:center">
+      <div id="gateLogin">
+        <p class="muted" style="margin-top:0">כדי לשלוח קבצים צריך להתחבר עם חשבון Google שאושר על ידי המנהל.</p>
+        <button class="btn grad block" id="login">
+          <svg viewBox="0 0 24 24"><path fill="#fff" d="M21.35 11.1H12v2.98h5.35c-.23 1.4-1.66 4.1-5.35 4.1-3.22 0-5.85-2.67-5.85-5.96S8.78 6.26 12 6.26c1.83 0 3.06.78 3.76 1.45l2.56-2.47C16.68 3.7 14.55 2.75 12 2.75 6.9 2.75 2.75 6.9 2.75 12S6.9 21.25 12 21.25c5.34 0 8.88-3.75 8.88-9.04 0-.6-.07-1.07-.16-1.53z"/></svg>
+          כניסה עם Google
+        </button>
+      </div>
+      <div id="gateStatus" class="hidden">
+        <div id="gateIcon" style="font-size:2.4rem;line-height:1"></div>
+        <h2 id="gateTitle" style="justify-content:center;margin:10px 0 6px"></h2>
+        <p class="muted" id="gateText" style="margin:0"></p>
+        <div class="stack">
+          <button class="btn soft block hidden" id="recheck">בדיקה מחדש</button>
+          <button class="btn ghost block" id="logout2">התנתקות</button>
+        </div>
+      </div>
+      <div id="gateMsg" class="msg err"></div>
+    </div>
+
+    <div class="card hidden" id="uploadCard">
+      <div class="file-line" style="margin:0 0 14px;justify-content:space-between">
+        <span id="acct"></span>
+        <button class="btn ghost sm" id="logout">התנתקות</button>
+      </div>
       <label class="drop" id="drop">
         <input id="file" type="file">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="M9 15l3-3 3 3"/></svg>
@@ -51,14 +76,72 @@
   <div class="toast" id="toast"></div>
 
   <script type="module">
-    import { ACCEPT, isPrintable, uploadFile, randomCode, ensureUser, db } from '../assets/common.js?v=4';
-    import { doc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { ACCEPT, ADMIN_EMAIL, isPrintable, uploadFile, randomCode, ensureUser, auth, db } from '../assets/common.js?v=5';
+    import { doc, getDoc, setDoc, writeBatch, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
     const $ = (id) => document.getElementById(id);
     const fileInput = $('file'), drop = $('drop'), msg = $('msg');
     fileInput.accept = ACCEPT;
 
     function show(text, kind = '') { msg.textContent = text; msg.className = 'msg ' + kind; }
+
+    // ---------- הרשאת שליחה ----------
+    const fmtDate = (d) => d.toLocaleDateString('he-IL', { day: 'numeric', month: 'numeric', year: 'numeric' });
+
+    function gate(state, user, u) {
+      const allowed = state === 'ok';
+      $('gateCard').classList.toggle('hidden', allowed);
+      $('uploadCard').classList.toggle('hidden', !allowed);
+      $('resultCard').classList.add('hidden');
+      $('gateLogin').classList.toggle('hidden', state !== 'login');
+      $('gateStatus').classList.toggle('hidden', state === 'login' || allowed);
+      if (allowed) {
+        const until = u?.activeUntil?.toDate?.();
+        $('acct').textContent = user.email + (until ? ' · פעיל עד ' + fmtDate(until) : '');
+        return;
+      }
+      const texts = {
+        pending: ['⏳', 'הבקשה נשלחה למנהל', 'החשבון ' + user?.email + ' ממתין לאישור. אחרי האישור אפשר יהיה לשלוח קבצים.'],
+        blocked: ['⛔', 'החשבון חסום', 'החשבון ' + user?.email + ' נחסם על ידי המנהל.'],
+        expired: ['⌛', 'תוקף החשבון הסתיים', 'הגישה של ' + user?.email + ' הסתיימה' + (u?.activeUntil ? ' ב-' + fmtDate(u.activeUntil.toDate()) : '') + '. פנו למנהל לחידוש.'],
+      };
+      if (texts[state]) {
+        const [icon, title, text] = texts[state];
+        $('gateIcon').textContent = icon;
+        $('gateTitle').textContent = title;
+        $('gateText').textContent = text;
+        $('recheck').classList.toggle('hidden', state === 'blocked');
+      }
+    }
+
+    async function checkAccess(user) {
+      if (!user || user.isAnonymous) return gate('login');
+      if (user.email === ADMIN_EMAIL && user.emailVerified) return gate('ok', user);
+      const ref = doc(db, 'users', user.email);
+      let snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, { name: user.displayName ?? '', requestedAt: serverTimestamp(), approved: false, blocked: false, activeUntil: null });
+        snap = await getDoc(ref);
+      }
+      const u = snap.data();
+      if (u.blocked) return gate('blocked', user, u);
+      if (!u.approved) return gate('pending', user, u);
+      if (u.activeUntil && u.activeUntil.toMillis() < Date.now()) return gate('expired', user, u);
+      gate('ok', user, u);
+    }
+
+    onAuthStateChanged(auth, (user) => checkAccess(user).catch((err) => {
+      console.error(err);
+      $('gateCard').classList.remove('hidden');
+      $('gateMsg').textContent = 'שגיאה: ' + err.message;
+    }));
+    $('login').addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()).catch((err) => {
+      if (err.code !== 'auth/popup-closed-by-user') $('gateMsg').textContent = 'ההתחברות נכשלה: ' + err.message;
+    }));
+    $('recheck').addEventListener('click', () => checkAccess(auth.currentUser).catch(console.error));
+    $('logout').addEventListener('click', () => signOut(auth));
+    $('logout2').addEventListener('click', () => signOut(auth));
     function toast(text) {
       const t = $('toast');
       t.textContent = text;
@@ -112,7 +195,7 @@
         $('resultCard').classList.remove('hidden');
       } catch (err) {
         console.error(err);
-        show('שגיאה: ' + err.message, 'err');
+        show(err.code === 'permission-denied' ? 'אין הרשאה לשלוח. ייתכן שהחשבון נחסם או שפג תוקפו.' : 'שגיאה: ' + err.message, 'err');
       }
       drop.classList.remove('hidden');
       $('uploading').classList.add('hidden');

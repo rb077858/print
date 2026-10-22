@@ -96,7 +96,7 @@ a:hover { text-decoration: underline; }
 .card .hint { color: var(--muted); font-size: .9rem; margin: -8px 0 14px; }
 
 /* ---------- טפסים ---------- */
-input[type=text], input[type=number], select {
+input[type=text], input[type=number], input[type=date], select {
   font: inherit;
   padding: 11px 14px;
   border: 1.5px solid var(--line);

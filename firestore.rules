@@ -9,6 +9,7 @@ rules_version = '2';
 //   queue/{fileId}            קובץ שהקוד החד-פעמי שלו עוד לא נוצל: { code, ttlMinutes, createdAt }
 //   access/{fileId}_{uid}     הרשאת הורדה ל-10 דקות, נוצרת יחד עם מימוש הקוד
 //   claims/{uid}              הוכחה שהמשתמש הזין את קוד המאסטר (ל-10 דקות)
+//   users/{email}             משתמש שמורשה לשלוח קבצים: { approved, blocked, activeUntil, ... }
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -20,6 +21,19 @@ service cloud.firestore {
       return signedIn()
         && request.auth.token.email == 'rb077858@gmail.com'
         && request.auth.token.email_verified == true;
+    }
+
+    // מי שמורשה לשלוח קבצים: המנהל, או משתמש Google שהמנהל אישר, לא חסום, ובתוקף
+    function canSend() {
+      return isAdmin() || (signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true
+        && activeUser(get(/databases/$(database)/documents/users/$(request.auth.token.email)).data));
+    }
+
+    function activeUser(u) {
+      return u.approved == true && u.blocked == false
+        && (u.activeUntil == null || request.time < u.activeUntil);
     }
 
     // ttlMinutes == 0 פירושו "לא פג לעולם"
@@ -49,9 +63,10 @@ service cloud.firestore {
     match /files/{fileId} {
       allow read: if isAdmin() || hasAccess(fileId);
       // העלאה מדף /send (משתמש אנונימי)
-      allow create: if isAdmin() || (signedIn()
-        && request.resource.data.keys().hasOnly(['name', 'type', 'size', 'chunks', 'owner', 'createdAt', 'source'])
+      allow create: if isAdmin() || (canSend()
+        && request.resource.data.keys().hasOnly(['name', 'type', 'size', 'chunks', 'owner', 'ownerEmail', 'createdAt', 'source'])
         && request.resource.data.owner == request.auth.uid
+        && request.resource.data.ownerEmail == request.auth.token.email
         && request.resource.data.source == 'send'
         && request.resource.data.createdAt == request.time
         && request.resource.data.size is int
@@ -63,7 +78,7 @@ service cloud.firestore {
 
       match /chunks/{n} {
         allow read: if isAdmin() || hasAccess(fileId);
-        allow create: if isAdmin() || (signedIn()
+        allow create: if isAdmin() || (canSend()
           && get(/databases/$(database)/documents/files/$(fileId)).data.owner == request.auth.uid
           && int(n) < get(/databases/$(database)/documents/files/$(fileId)).data.chunks
           && request.resource.data.keys().hasOnly(['d'])
@@ -79,7 +94,7 @@ service cloud.firestore {
       allow list: if isAdmin();
 
       // קוד שנוצר מדף /send: 6 ספרות, חד-פעמי, שעתיים, לקובץ שהמשתמש עצמו העלה
-      allow create: if isAdmin() || (signedIn()
+      allow create: if isAdmin() || (canSend()
         && code.matches('^[0-9]{6}$')
         && request.resource.data.keys().hasOnly(['fileId', 'singleUse', 'ttlMinutes', 'used', 'createdAt', 'createdBy'])
         && request.resource.data.singleUse == true
@@ -107,7 +122,7 @@ service cloud.firestore {
       // רק המנהל ומי שהזין את קוד המאסטר רואים את התור (הוא כולל את הקודים)
       allow read: if isAdmin() || isMasterHolder();
       // נוצר מדף /send יחד עם הקוד
-      allow create: if isAdmin() || (signedIn()
+      allow create: if isAdmin() || (canSend()
         && request.resource.data.keys().hasOnly(['code', 'ttlMinutes', 'createdAt'])
         && request.resource.data.ttlMinutes == 120
         && request.resource.data.createdAt == request.time
@@ -144,6 +159,22 @@ service cloud.firestore {
         && request.resource.data.at == request.time
         && get(/databases/$(database)/documents/codes/$(request.resource.data.code)).data.get('master', false) == true;
       allow read, delete: if isAdmin();
+    }
+
+    match /users/{email} {
+      allow get: if isAdmin() || (signedIn() && request.auth.token.email == email);
+      allow list: if isAdmin();
+      // משתמש חדש מבקש גישה; רק המנהל יכול לאשר
+      allow create: if isAdmin() || (signedIn()
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.email == email
+        && request.resource.data.keys().hasOnly(['name', 'requestedAt', 'approved', 'blocked', 'activeUntil'])
+        && request.resource.data.approved == false
+        && request.resource.data.blocked == false
+        && request.resource.data.activeUntil == null
+        && request.resource.data.requestedAt == request.time);
+      allow update, delete: if isAdmin();
     }
   }
 }
