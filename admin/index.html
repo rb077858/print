@@ -102,7 +102,7 @@
   </div>
 
   <script type="module">
-    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeProblem, isPrintable } from '../assets/common.js';
+    import { auth, db, ADMIN_EMAIL, ACCEPT, uploadFile, randomCode, formatSize, codeProblem, isPrintable } from '../assets/common.js?v=2';
     import { GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
     import {
       collection, getDocs, getDoc, doc, setDoc, deleteDoc, writeBatch, serverTimestamp, arrayRemove,

@@ -3,7 +3,7 @@ import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/1
 import {
   getFirestore, doc, collection, getDoc, setDoc, writeBatch, serverTimestamp, Bytes,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { firebaseConfig } from './firebase-config.js';
+import { firebaseConfig } from './firebase-config.js?v=2';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
@@ -175,7 +175,10 @@ export async function printFile({ name, type, blob }) {
     const t0 = Date.now();
     w.print();
     // בכרום print() חוסם עד שהחלונית נסגרת
-    if (Date.now() - t0 > 150) finish();
+    if (Date.now() - t0 > 150) return finish();
+    // גיבוי: אם לא נחסם ולא הגיע afterprint, ממשיכים כשהחלון חוזר לפוקוס או אחרי דקה
+    window.addEventListener('focus', finish, { once: true });
+    setTimeout(finish, 60000);
   });
 
   setTimeout(() => {
